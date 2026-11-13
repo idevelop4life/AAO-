@@ -1,0 +1,186 @@
+# Pages CMS editor for Angela's website.
+# Sign in at https://app.pagescms.org with GitHub and open this repository.
+
+media:
+  input: images
+  output: /images
+
+content:
+  - name: site
+    label: Website
+    type: file
+    path: content/site.json
+    format: json
+    fields:
+      - name: profile
+        label: Profile (top of page)
+        type: object
+        fields:
+          - { name: name, label: "Name (wrap a word in *asterisks* to make it gold)", type: string }
+          - { name: kicker, label: Small line above your name, type: string }
+          - { name: tagline, label: Tagline, type: text }
+          - { name: photo, label: Main photo, type: image }
+          - { name: photoAlt, label: Photo description, type: string }
+
+      - name: socials
+        label: Social links
+        type: object
+        list:
+          collapsible: true
+        fields:
+          - name: platform
+            label: Platform
+            type: select
+            options:
+              values:
+                - { name: instagram, label: Instagram }
+                - { name: tiktok, label: TikTok }
+                - { name: x, label: X }
+                - { name: linkedin, label: LinkedIn }
+                - { name: youtube, label: YouTube }
+                - { name: facebook, label: Facebook }
+                - { name: threads, label: Threads }
+                - { name: website, label: Website }
+          - { name: handle, label: Handle, type: string }
+          - { name: url, label: Link, type: string }
+
+      - name: about
+        label: About
+        type: object
+        fields:
+          - { name: heading, label: Heading, type: string }
+          - { name: lead, label: Opening line, type: text }
+          - { name: paragraphs, label: Paragraphs, type: text, list: true }
+          - name: facts
+            label: Quick facts
+            type: object
+            list: true
+            fields:
+              - { name: label, label: Label, type: string }
+              - { name: value, label: Value, type: string }
+          - { name: photo, label: About photo (optional), type: image }
+          - { name: photoAlt, label: About photo description, type: string }
+
+      - name: building
+        label: Building (projects)
+        type: object
+        fields:
+          - { name: heading, label: Heading, type: string }
+          - name: items
+            label: Projects
+            type: object
+            list:
+              collapsible: true
+            fields:
+              - { name: name, label: "Name (*asterisks* = gold)", type: string }
+              - { name: status, label: Status line, type: string }
+              - { name: description, label: Description, type: text }
+              - { name: link, label: Link (optional), type: string }
+              - { name: featured, label: Feature this one (full-width card), type: boolean }
+              - { name: ctaText, label: Button text (featured only), type: string }
+
+      - name: interests
+        label: Interests
+        type: object
+        fields:
+          - { name: heading, label: Heading, type: string }
+          - name: items
+            label: Interests
+            type: object
+            list: true
+            fields:
+              - { name: title, label: Title, type: string }
+              - { name: text, label: Text, type: text }
+
+      - name: gallery
+        label: Gallery
+        type: object
+        fields:
+          - { name: heading, label: Heading, type: string }
+          - name: items
+            label: Photos
+            type: object
+            list:
+              collapsible: true
+            fields:
+              - { name: src, label: Photo, type: image }
+              - { name: caption, label: Caption (optional), type: string }
+
+      - name: thoughts
+        label: Thoughts (short posts)
+        type: object
+        fields:
+          - { name: heading, label: Heading, type: string }
+          - name: items
+            label: Posts
+            type: object
+            list:
+              collapsible: true
+            fields:
+              - { name: id, label: "ID (any unique word, e.g. t2)", type: string }
+              - { name: text, label: Post, type: text }
+              - { name: date, label: Date, type: date }
+              - { name: xUrl, label: Link to this post on X (optional), type: string }
+
+      - name: quote
+        label: Quote of the week
+        type: object
+        fields:
+          - { name: label, label: Label, type: string }
+          - { name: text, label: Quote, type: text }
+          - { name: by, label: Signed, type: string }
+
+      - name: journal
+        label: Journal
+        type: object
+        fields:
+          - { name: heading, label: Heading, type: string }
+          - name: posts
+            label: Posts
+            type: object
+            list:
+              collapsible: true
+            fields:
+              - { name: title, label: Title, type: string }
+              - name: status
+                label: Status
+                type: select
+                options:
+                  values:
+                    - { name: published, label: Published }
+                    - { name: soon, label: Coming soon }
+                    - { name: draft, label: Draft (hidden) }
+              - name: category
+                label: Category
+                type: select
+                options:
+                  values:
+                    - { name: Life, label: Life }
+                    - { name: Building, label: Building }
+                    - { name: Tech, label: Tech }
+              - { name: date, label: Date, type: date }
+              - { name: excerpt, label: Short summary, type: text }
+              - { name: body, label: "Full post (blank line between paragraphs)", type: text }
+
+      - name: subscribe
+        label: Subscribe
+        type: object
+        fields:
+          - { name: heading, label: Heading, type: string }
+          - { name: text, label: Text, type: text }
+          - { name: dailyNote, label: Daily option note, type: string }
+          - { name: weeklyNote, label: Weekly option note, type: string }
+          - { name: url, label: Newsletter signup URL (leave empty until set up), type: string }
+
+      - name: sections
+        label: Show / hide sections
+        type: object
+        fields:
+          - { name: about, label: About, type: boolean }
+          - { name: building, label: Building, type: boolean }
+          - { name: interests, label: Interests, type: boolean }
+          - { name: gallery, label: Gallery, type: boolean }
+          - { name: thoughts, label: Thoughts, type: boolean }
+          - { name: quote, label: Quote, type: boolean }
+          - { name: journal, label: Journal, type: boolean }
+          - { name: subscribe, label: Subscribe, type: boolean }

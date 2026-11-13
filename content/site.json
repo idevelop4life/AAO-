@@ -1,0 +1,216 @@
+{
+  "profile": {
+    "name": "Angela Agunwami *Onwuka*",
+    "kicker": "Atlanta, Georgia · Rooted in Nigeria",
+    "tagline": "Founder, technologist and content creator. I build businesses, explore artificial intelligence, and share the life in between.",
+    "photo": "/images/portrait.jpg",
+    "photoAlt": "Portrait of Angela Agunwami Onwuka"
+  },
+  "sections": {
+    "about": true,
+    "building": true,
+    "interests": true,
+    "gallery": true,
+    "thoughts": true,
+    "quote": true,
+    "journal": true,
+    "subscribe": true
+  },
+  "socials": [
+    {
+      "platform": "instagram",
+      "handle": "@agunwamiii",
+      "url": "https://www.instagram.com/agunwamiii"
+    },
+    {
+      "platform": "tiktok",
+      "handle": "@agunwamiii",
+      "url": "https://www.tiktok.com/@agunwamiii"
+    },
+    {
+      "platform": "x",
+      "handle": "@agunwamiii",
+      "url": "https://x.com/agunwamiii"
+    }
+  ],
+  "about": {
+    "heading": "Two homes, one long journey",
+    "photo": "",
+    "photoAlt": "",
+    "lead": "I was born and raised in Nigeria and moved to the United States at thirteen. Both places shaped who I am, and both show up in everything I build.",
+    "paragraphs": [
+      "My background sits where technology and business meet. I've spent my career turning what people need into systems that work, and I'm always learning, lately with a focus on artificial intelligence.",
+      "In 2022 I founded Agunwami Enterprises, where I lead a team building digital products for the US and Nigeria.",
+      "Being a founder is a big part of my life, but it isn't all of it. This site is the rest: what I'm learning, what I'm making, and what I'm figuring out along the way."
+    ],
+    "facts": [
+      {
+        "label": "Based in",
+        "value": "Atlanta, Georgia"
+      },
+      {
+        "label": "Roots",
+        "value": "Nigeria"
+      },
+      {
+        "label": "Building",
+        "value": "Agunwami Enterprises, founder & CEO"
+      },
+      {
+        "label": "Creating",
+        "value": "Lifestyle, tech and business content"
+      }
+    ]
+  },
+  "building": {
+    "heading": "What I'm working on",
+    "items": [
+      {
+        "name": "*Agunwami* Enterprises",
+        "status": "Since 2022 · Founder & CEO",
+        "description": "My company builds websites and software, from business sites to full platforms. I lead a hands-on team that works in sprints with clear ownership and honest reporting. If you have something you want built, I'd love to hear about it.",
+        "link": "https://agunwamienterprise.com",
+        "ctaText": "Start a project",
+        "featured": true
+      },
+      {
+        "name": "Meridian Crest Solutions",
+        "status": "Recruitment & staffing",
+        "description": "Connecting employers with qualified candidates through direct-hire recruitment.",
+        "link": "https://meridiancrestsolution.com",
+        "featured": false,
+        "ctaText": ""
+      },
+      {
+        "name": "AE Hub",
+        "status": "In development",
+        "description": "A career and professional development platform for students, staff and administrators.",
+        "link": "",
+        "featured": false,
+        "ctaText": ""
+      },
+      {
+        "name": "Trendora Stores",
+        "status": "In development",
+        "description": "Online retail built for shoppers in Nigeria.",
+        "link": "",
+        "featured": false,
+        "ctaText": ""
+      },
+      {
+        "name": "A4L Stores",
+        "status": "Concept",
+        "description": "A marketplace where independent sellers and buyers meet and trade directly.",
+        "link": "",
+        "featured": false,
+        "ctaText": ""
+      },
+      {
+        "name": "Letter Well",
+        "status": "In development",
+        "description": "More details coming soon.",
+        "link": "",
+        "featured": false,
+        "ctaText": ""
+      },
+      {
+        "name": "AE Writing Tool",
+        "status": "In development",
+        "description": "More details coming soon.",
+        "link": "",
+        "featured": false,
+        "ctaText": ""
+      }
+    ]
+  },
+  "gallery": {
+    "heading": "Moments",
+    "items": [
+      {
+        "src": "/images/gallery-1.jpg",
+        "caption": ""
+      },
+      {
+        "src": "/images/gallery-2.jpg",
+        "caption": ""
+      },
+      {
+        "src": "/images/gallery-3.jpg",
+        "caption": ""
+      }
+    ]
+  },
+  "thoughts": {
+    "heading": "Quick thoughts",
+    "items": [
+      {
+        "id": "t1",
+        "text": "Welcome to my corner of the internet. This is where I'll share quick thoughts between posts. Say hi below.",
+        "date": "2026-11-13",
+        "xUrl": ""
+      }
+    ]
+  },
+  "interests": {
+    "heading": "What keeps me curious",
+    "items": [
+      {
+        "title": "Artificial intelligence",
+        "text": "Language models, conversational systems, and how AI can actually help a business run."
+      },
+      {
+        "title": "Cybersecurity",
+        "text": "Currently learning identity and access management, risk and compliance, one certification at a time."
+      },
+      {
+        "title": "Photography",
+        "text": "Seeing people and places carefully. Some of it will end up here."
+      },
+      {
+        "title": "Content creation",
+        "text": "Lifestyle, tech and business: the process, not just the highlights."
+      }
+    ]
+  },
+  "quote": {
+    "label": "This week",
+    "text": "Build for where you come from and where you are. You don't have to choose.",
+    "by": "Angela · Sample quote, replace with your own"
+  },
+  "journal": {
+    "heading": "Notes on life and work",
+    "posts": [
+      {
+        "title": "From Abia to Atlanta",
+        "category": "Life",
+        "date": "",
+        "status": "soon",
+        "excerpt": "Moving countries at thirteen, and what it taught me about starting over.",
+        "body": ""
+      },
+      {
+        "title": "Our investment year",
+        "category": "Building",
+        "date": "",
+        "status": "soon",
+        "excerpt": "What it's really like to spend a year building before the revenue comes.",
+        "body": ""
+      },
+      {
+        "title": "Learning AI while running a company",
+        "category": "Tech",
+        "date": "",
+        "status": "soon",
+        "excerpt": "How I make time to keep learning, and what I'm finding most useful.",
+        "body": ""
+      }
+    ]
+  },
+  "subscribe": {
+    "heading": "Get a little of this in your inbox",
+    "text": "A quote, a thought, and what I'm working on. Pick how often you'd like to hear from me. No spam, and you can leave anytime.",
+    "dailyNote": "A quote each morning",
+    "weeklyNote": "Quote, updates and new posts",
+    "url": ""
+  }
+}

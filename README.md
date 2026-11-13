@@ -7,24 +7,22 @@ My personal site: who I am, what I'm building, photos, quick thoughts, a journal
 | File | What it is |
 |---|---|
 | `index.html` | The whole site: layout, styles, scripts and all the content |
-| `portrait.jpg` | Main photo at the top of the page |
-| `gallery-1.jpg`, `gallery-2.jpg`, `gallery-3.jpg` | Gallery photos |
+| `content/site.json` | All the words, links and photo paths on the site |
+| `images/` | Photos |
+| `admin/` | The admin page at /admin |
+| `.pages.yml` | Settings for the Pages CMS editor |
 
-## Editing content
+## Editing content (admin)
 
-All the text, links, projects, gallery photos, thoughts and journal posts live in one block near the bottom of `index.html`:
+Go to **yoursite/admin** and click **Open the editor**, or go straight to [app.pagescms.org](https://app.pagescms.org). Sign in with GitHub, open this repository, then **Website**. Every section of the site is editable there, including photo uploads. Saving commits to GitHub, and Vercel redeploys automatically.
 
-```html
-<script type="application/json" id="site-data">
-```
+Only people with write access to this GitHub repository can sign in and save.
 
-Change the text there and save. Wrap a word in `*asterisks*` to make it gold (for example `*Agunwami* Enterprises`).
-
-To add a gallery photo, put the image in this folder and add a line to `gallery.items`:
-
-```json
-{"src": "gallery-4.jpg", "caption": "Optional caption"}
-```
+Behind the scenes:
+- All content lives in `content/site.json`. The editor's layout is defined in `.pages.yml`.
+- Photos live in `images/`.
+- `index.html` also carries a copy of the content as a fallback, so the page never loads blank.
+- Wrap a word in `*asterisks*` to make it gold (for example `*Agunwami* Enterprises`).
 
 ## Going live
 
@@ -37,7 +35,7 @@ Then point your domain at the host.
 
 ## Things that only work inside Claude
 
-The **Edit site** panel and replies under Thoughts use Claude's artifact features. On another host the page still works; those two features stay hidden. When the site moves to its own domain, they can be rebuilt with a hosted editor and a small database.
+The in-page **Edit site** button and replies under Thoughts use Claude's artifact features, so they only appear in the Claude preview. On the public site, use /admin to edit. Public replies would need a small database, which can be added later.
 
 ## Newsletter
 
