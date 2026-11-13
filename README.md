@@ -1,42 +1,40 @@
 # Angela Agunwami Onwuka — Personal Website
 
-My personal site: who I am, what I'm building, photos, quick thoughts, a journal and a newsletter signup. Black and gold, one page, no build step.
+Personal site with a private admin. Black and gold, plain HTML/JS, hosted on Vercel, with Supabase for logins, content, photos, replies and subscribers.
 
-## What's in here
+## Files
 
-| File | What it is |
+| Path | What it is |
 |---|---|
-| `index.html` | The whole site: layout, styles, scripts and all the content |
-| `content/site.json` | All the words, links and photo paths on the site |
-| `images/` | Photos |
-| `admin/` | The admin page at /admin |
-| `.pages.yml` | Settings for the Pages CMS editor |
+| `index.html` + `site.js` | The public website |
+| `admin/` | The admin app at **/admin** |
+| `config.js` | Supabase Project URL + anon key (public by design) |
+| `setup.sql` | Creates the database tables, roles and security rules. Run once. |
+| `images/` | Starting photos. New uploads go to Supabase storage. |
 
-## Editing content (admin)
+## Roles
 
-Go to **yoursite/admin** and click **Open the editor**, or go straight to [app.pagescms.org](https://app.pagescms.org). Sign in with GitHub, open this repository, then **Website**. Every section of the site is editable there, including photo uploads. Saving commits to GitHub, and Vercel redeploys automatically.
+| Role | Can do |
+|---|---|
+| **Super admin** | Everything, plus approve people and change anyone's role under *Users & access* |
+| **Admin** | Edit all website content and photos, manage replies and subscribers |
+| **No access** | Signed up but waiting for approval; can't change anything |
 
-Only people with write access to this GitHub repository can sign in and save.
+- The **first account ever created** becomes super admin automatically.
+- Everyone after that starts with no access until a super admin approves them.
+- There must always be at least one super admin; the database blocks removing the last one.
+- Permissions are enforced by the database (row level security), not just the page, so they can't be bypassed from the browser.
 
-Behind the scenes:
-- All content lives in `content/site.json`. The editor's layout is defined in `.pages.yml`.
-- Photos live in `images/`.
-- `index.html` also carries a copy of the content as a fallback, so the page never loads blank.
-- Wrap a word in `*asterisks*` to make it gold (for example `*Agunwami* Enterprises`).
+## One-time setup
 
-## Going live
+1. Create a Supabase project.
+2. In Supabase, open **SQL Editor → New query**, paste all of `setup.sql`, click **Run**.
+3. In **Authentication → URL Configuration**, set **Site URL** to the live site (e.g. `https://yoursite.vercel.app`) and add `https://yoursite.vercel.app/admin/` under **Redirect URLs**.
+4. Put the Project URL and anon/publishable key in `config.js`. Never put the service_role / secret key in this repo.
+5. Go to **/admin**, click **Request access**, and create the first account. It becomes super admin.
 
-The site is plain HTML, so it works on any static host:
+## Editing
 
-- **Vercel** or **Netlify**: import this repository and deploy. No settings needed.
-- **GitHub Pages**: Settings → Pages → deploy from the `main` branch.
+Sign in at **/admin**. Changes preview in the form; click **Save & publish** and the live site shows them immediately (no redeploy needed). Wrap a word in `*asterisks*` to make it gold.
 
-Then point your domain at the host.
-
-## Things that only work inside Claude
-
-The in-page **Edit site** button and replies under Thoughts use Claude's artifact features, so they only appear in the Claude preview. On the public site, use /admin to edit. Public replies would need a small database, which can be added later.
-
-## Newsletter
-
-Paste your newsletter provider's signup URL into `subscribe.url` in the site data. Until then, the form tells visitors subscriptions are opening soon.
+`index.html` also carries a copy of the content, used only if the database can't be reached.
