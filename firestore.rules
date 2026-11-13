@@ -1,0 +1,92 @@
+rules_version = '2';
+
+// Security rules for Angela's website.
+// Paste this into Firebase: Firestore Database -> Rules -> Publish.
+//
+// Roles (stored in users/{uid}.role):
+//   pending      signed up, no access until a super admin approves
+//   admin        edits website content, photos, replies, subscribers
+//   super_admin  everything, plus approves people and changes roles
+// The very first account becomes super_admin (guarded by meta/bootstrap).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function userDoc(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function myRole() { return get(userDoc(request.auth.uid)).data.role; }
+    function isStaff() { return signedIn() && exists(userDoc(request.auth.uid)) && myRole() in ['admin', 'super_admin']; }
+    function isSuper() { return signedIn() && exists(userDoc(request.auth.uid)) && myRole() == 'super_admin'; }
+    function bootstrapPath() { return /databases/$(database)/documents/meta/bootstrap; }
+
+    // Website content: everyone reads, staff edits.
+    match /site/{doc} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    // Uploaded photos (stored as compressed images): everyone reads, staff uploads/removes.
+    match /media/{id} {
+      allow read: if true;
+      allow create: if isStaff()
+        && request.resource.data.data is string
+        && request.resource.data.data.size() < 1000000;
+      allow delete: if isStaff();
+    }
+
+    // People with admin accounts.
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isSuper());
+
+      // You can only create your own record, and only as pending,
+      // except the very first account, which becomes super admin.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['email', 'role', 'createdAt'])
+        && request.resource.data.email == request.auth.token.email
+        && (
+          request.resource.data.role == 'pending'
+          || (request.resource.data.role == 'super_admin'
+              && !exists(bootstrapPath())
+              && existsAfter(bootstrapPath()))
+        );
+
+      // Only super admins change roles, never their own (so one always remains).
+      allow update: if isSuper() && request.auth.uid != uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+        && request.resource.data.role in ['pending', 'admin', 'super_admin'];
+
+      allow delete: if false;
+    }
+
+    // Marks that the first super admin has been created.
+    match /meta/bootstrap {
+      allow read: if true;
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid
+        && getAfter(userDoc(request.auth.uid)).data.role == 'super_admin';
+      allow update, delete: if false;
+    }
+
+    // Replies to Thoughts: anyone can post, staff can remove.
+    match /replies/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['thoughtId', 'name', 'body', 'createdAt'])
+        && request.resource.data.thoughtId is string && request.resource.data.thoughtId.size() > 0 && request.resource.data.thoughtId.size() <= 40
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        && request.resource.data.body is string && request.resource.data.body.size() > 0 && request.resource.data.body.size() <= 500
+        && request.resource.data.createdAt == request.time;
+      allow delete: if isStaff();
+    }
+
+    // Newsletter subscribers: anyone can join (one entry per email), staff can view/remove.
+    match /subscribers/{email} {
+      allow create: if request.resource.data.keys().hasOnly(['email', 'name', 'frequency', 'createdAt'])
+        && request.resource.data.email == email
+        && email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')
+        && request.resource.data.name is string && request.resource.data.name.size() <= 80
+        && request.resource.data.frequency in ['daily', 'weekly']
+        && request.resource.data.createdAt == request.time;
+      allow read, delete: if isStaff();
+    }
+  }
+}

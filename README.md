@@ -1,6 +1,6 @@
 # Angela Agunwami Onwuka — Personal Website
 
-Personal site with a private admin. Black and gold, plain HTML/JS, hosted on Vercel, with Supabase for logins, content, photos, replies and subscribers.
+Personal site with a private admin. Black and gold, plain HTML/JS, hosted on Vercel, with Firebase (free Spark plan) for logins, content, photos, replies and subscribers.
 
 ## Files
 
@@ -8,9 +8,9 @@ Personal site with a private admin. Black and gold, plain HTML/JS, hosted on Ver
 |---|---|
 | `index.html` + `site.js` | The public website |
 | `admin/` | The admin app at **/admin** |
-| `config.js` | Supabase Project URL + anon key (public by design) |
-| `setup.sql` | Creates the database tables, roles and security rules. Run once. |
-| `images/` | Starting photos. New uploads go to Supabase storage. |
+| `config.js` | Firebase web config (public by design) |
+| `firestore.rules` | Security rules: who can read and change what. Paste into Firebase once. |
+| `images/` | Starting photos. New uploads are compressed and stored in Firestore. |
 
 ## Roles
 
@@ -22,16 +22,18 @@ Personal site with a private admin. Black and gold, plain HTML/JS, hosted on Ver
 
 - The **first account ever created** becomes super admin automatically.
 - Everyone after that starts with no access until a super admin approves them.
-- There must always be at least one super admin; the database blocks removing the last one.
-- Permissions are enforced by the database (row level security), not just the page, so they can't be bypassed from the browser.
+- Nobody can change their own role, so there is always at least one super admin.
+- Permissions are enforced by Firestore security rules, not just the page, so they can't be bypassed from the browser.
 
 ## One-time setup
 
-1. Create a Supabase project.
-2. In Supabase, open **SQL Editor → New query**, paste all of `setup.sql`, click **Run**.
-3. In **Authentication → URL Configuration**, set **Site URL** to the live site (e.g. `https://yoursite.vercel.app`) and add `https://yoursite.vercel.app/admin/` under **Redirect URLs**.
-4. Put the Project URL and anon/publishable key in `config.js`. Never put the service_role / secret key in this repo.
-5. Go to **/admin**, click **Request access**, and create the first account. It becomes super admin.
+1. Create a Firebase project (Analytics off).
+2. **Authentication → Get started → Email/Password → Enable.**
+3. **Firestore Database → Create database** (production mode).
+4. **Firestore → Rules:** paste all of `firestore.rules`, click **Publish**.
+5. **Project settings → Your apps → Web (</>)**: register the app and copy the config values into `config.js`.
+6. **Authentication → Settings → Authorized domains:** add the Vercel domain.
+7. Go to **/admin**, click **Request access**, and create the first account. It becomes super admin, and the starting content is copied into the database automatically.
 
 ## Editing
 

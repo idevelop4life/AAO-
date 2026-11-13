@@ -1,6 +1,11 @@
-/* Supabase connection. Both values are public by design; security comes from the database rules in setup.sql.
-   Never put the service_role / secret key here. */
+/* Firebase connection. These values are public by design; security comes from firestore.rules. */
 window.SITE_CONFIG = {
-  supabaseUrl: "",
-  supabaseAnonKey: ""
+  firebase: {
+    apiKey: "",
+    authDomain: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
+  }
 };

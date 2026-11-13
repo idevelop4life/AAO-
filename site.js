@@ -4,14 +4,15 @@ const FALLBACK = JSON.parse(document.getElementById("site-data").textContent);
 let S = FALLBACK;
 let REPLIES = [];
 
-const CFG = window.SITE_CONFIG || {};
-const sb = (CFG.supabaseUrl && CFG.supabaseAnonKey && window.supabase)
-  ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {auth: {persistSession: false}})
-  : null;
+const CFG = (window.SITE_CONFIG || {}).firebase || {};
+let fb = null;
+try { if (CFG.apiKey && CFG.projectId && window.firebase) { firebase.initializeApp(CFG); fb = firebase.firestore(); } } catch { fb = null; }
+const sb = fb; /* replies + subscribe UI turn on when the database is connected */
+const MEDIA = {};
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const safeUrl = u => { u = String(u || "").trim(); if (!u) return ""; return /^(https?:|mailto:|\/)/i.test(u) ? u : "https://" + u.replace(/^\/+/, ""); };
-const imgSrc = u => { u = String(u || "").trim(); return /^(https?:|\/|data:image\/)/i.test(u) || (/^[\w./-]+$/.test(u) && !u.includes("..")) ? u : ""; };
+const imgSrc = u => { u = String(u || "").trim(); if (u.startsWith("media:")) return MEDIA[u.slice(6)] || ""; return /^(https?:|\/|data:image\/)/i.test(u) || (/^[\w./-]+$/.test(u) && !u.includes("..")) ? u : ""; };
 const gold = t => esc(t).replace(/\*([^*]+)\*/g, "<em>$1</em>");
 const plain = t => String(t || "").replace(/\*/g, "");
 const arr = a => Array.isArray(a) ? a : [];
@@ -166,9 +167,12 @@ function renderReplies(){
   });
 }
 async function loadReplies(){
-  if (!sb) return;
-  const {data, error} = await sb.from("replies").select("id,thought_id,name,body,created_at").order("created_at", {ascending: true}).limit(1000);
-  if (!error && data) { REPLIES = data; renderReplies(); }
+  if (!fb) return;
+  try {
+    const snap = await fb.collection("replies").orderBy("createdAt", "asc").limit(1000).get();
+    REPLIES = snap.docs.map(d => { const r = d.data(); return {id: d.id, thought_id: r.thoughtId, name: r.name, body: r.body, created_at: r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toISOString() : ""}; });
+    renderReplies();
+  } catch {}
 }
 async function postReply(form){
   const tid = form.dataset.replyForm, msg = form.querySelector(".rmsg"), btn = form.querySelector("button");
@@ -176,9 +180,9 @@ async function postReply(form){
   const name = form.querySelector(".rname").value.trim().slice(0,60), body = form.querySelector("textarea").value.trim().slice(0,500);
   if (!name || !body) { msg.textContent = "Add your name and a reply."; return; }
   btn.disabled = true; msg.textContent = "Posting…";
-  const {error} = await sb.from("replies").insert({thought_id: tid, name, body});
+  try { await fb.collection("replies").add({thoughtId: tid, name, body, createdAt: firebase.firestore.FieldValue.serverTimestamp()}); }
+  catch { btn.disabled = false; msg.textContent = "That didn't post. Please try again."; return; }
   btn.disabled = false;
-  if (error) { msg.textContent = "That didn't post. Please try again."; return; }
   try { localStorage.setItem("reply-name", name); } catch {}
   form.querySelector("textarea").value = ""; form.hidden = true; msg.textContent = "";
   loadReplies();
@@ -213,8 +217,9 @@ main.addEventListener("submit", async e => {
       const r = await fetch(url, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({email, name, frequency})});
       if (!r.ok) throw 0;
     } else {
-      const {error} = await sb.from("subscribers").insert({email: email.toLowerCase(), name: name.slice(0,80), frequency});
-      if (error && error.code !== "23505") throw error;
+      const em = email.toLowerCase();
+      try { await fb.collection("subscribers").doc(em).set({email: em, name: name.slice(0,80), frequency, createdAt: firebase.firestore.FieldValue.serverTimestamp()}); }
+      catch (err) { if (err && err.code !== "permission-denied") throw err; /* already subscribed */ }
     }
     msg.textContent = "You're on the list. Thank you!"; e.target.reset();
   } catch { msg.textContent = "That didn't go through. Please try again in a moment."; }
@@ -223,11 +228,23 @@ main.addEventListener("submit", async e => {
 
 render();
 
-/* Load the latest content from the database. */
-if (sb) {
-  sb.from("site_content").select("data").eq("id", 1).maybeSingle().then(({data, error}) => {
-    if (!error && data && data.data && typeof data.data === "object") { S = {...FALLBACK, ...data.data, sections: {...FALLBACK.sections, ...(data.data.sections || {})}}; render(); }
+/* Load the latest content (and any uploaded photos) from the database. */
+async function loadMedia(obj){
+  const ids = [...new Set((JSON.stringify(obj).match(/"media:[\w-]+"/g) || []).map(m => m.slice(7, -1)))].filter(id => !(id in MEDIA));
+  await Promise.all(ids.map(id => fb.collection("media").doc(id).get().then(d => { MEDIA[id] = d.exists ? d.data().data : ""; }).catch(() => {})));
+}
+if (fb) {
+  (async () => {
+    try {
+      const snap = await fb.doc("site/content").get();
+      const d = snap.exists ? snap.data().data : null;
+      if (d && typeof d === "object") {
+        await loadMedia(d);
+        S = {...FALLBACK, ...d, sections: {...FALLBACK.sections, ...(d.sections || {})}};
+        render();
+      }
+    } catch {}
     loadReplies();
-  });
+  })();
 }
 })();

@@ -116,7 +116,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--gold);outline:none}
   <div class="card">
     <a class="mark" href="/">A·A·O</a>
     <h1>Almost ready</h1>
-    <p class="hint">The admin isn't connected to the database yet. Add the Supabase Project URL and anon key to <code>config.js</code> in the repository, then reload this page.</p>
+    <p class="hint">The admin isn't connected to the database yet. Add the Firebase connection details to <code>config.js</code> in the repository, then reload this page.</p>
   </div>
 </div>
 
@@ -137,19 +137,6 @@ input:focus,textarea:focus,select:focus{border-color:var(--gold);outline:none}
       <button class="switch" type="button" data-mode="reset" id="to-reset">Forgot your password?</button>
       <button class="switch" type="button" data-mode="signin" id="to-signin" hidden>Back to sign in</button>
     </div>
-  </div>
-</div>
-
-<!-- Set new password (after reset email link) -->
-<div class="auth" id="v-newpass" hidden>
-  <div class="card">
-    <a class="mark" href="/">A·A·O</a>
-    <h1>Choose a new password</h1>
-    <form id="np-form" novalidate>
-      <label class="f" for="np-pass"><span>New password (8+ characters)</span><input type="password" id="np-pass" autocomplete="new-password" minlength="8" required></label>
-      <button class="btn" type="submit">Save password</button>
-      <p class="hint" id="np-msg" role="status" aria-live="polite"></p>
-    </form>
   </div>
 </div>
 
@@ -186,7 +173,9 @@ input:focus,textarea:focus,select:focus{border-color:var(--gold);outline:none}
 </div>
 
 <script src="/config.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.97.0"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="/admin/admin.js"></script>
 </body>
 </html>

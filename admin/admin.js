@@ -1,17 +1,21 @@
-/* Website admin: sign-in, content editor, photos, replies, subscribers and access control. */
+/* Website admin: email sign-in, content editor, photos, replies, subscribers and access control (Firebase). */
 (() => {
-const CFG = window.SITE_CONFIG || {};
+const CFG = (window.SITE_CONFIG || {}).firebase || {};
 const $ = id => document.getElementById(id);
-const VIEWS = ["v-setup","v-auth","v-newpass","v-pending","v-app"];
+const VIEWS = ["v-setup","v-auth","v-pending","v-app"];
 const show = v => VIEWS.forEach(x => $(x).hidden = x !== v);
 
-if (!CFG.supabaseUrl || !CFG.supabaseAnonKey || !window.supabase) { show("v-setup"); return; }
-const sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey);
+if (!CFG.apiKey || !CFG.projectId || !window.firebase) { show("v-setup"); return; }
+firebase.initializeApp(CFG);
+const auth = firebase.auth(), db = firebase.firestore();
+const TS = () => firebase.firestore.FieldValue.serverTimestamp();
+const MEDIA = {};
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const imgSrc = u => { u = String(u || "").trim(); return /^(https?:|\/|data:image\/)/i.test(u) || (/^[\w./-]+$/.test(u) && !u.includes("..")) ? (u.startsWith("http") || u.startsWith("/") ? u : "/" + u) : ""; };
+const imgSrc = u => { u = String(u || "").trim(); if (u.startsWith("media:")) return MEDIA[u.slice(6)] || ""; return /^(https?:|\/|data:image\/)/i.test(u) || (/^[\w./-]+$/.test(u) && !u.includes("..")) ? (/^(https?:|\/|data:)/.test(u) ? u : "/" + u) : ""; };
 const ROLE_LABEL = {super_admin: "Super admin", admin: "Admin", pending: "No access"};
-const fmtWhen = iso => { const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleString("en-US", {month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit"}); };
+const toDate = t => t && t.toDate ? t.toDate() : (t ? new Date(t) : null);
+const fmtWhen = t => { const d = toDate(t); return !d || isNaN(d) ? "" : d.toLocaleString("en-US", {month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit"}); };
 
 let me = null, role = null, SAVED = null, S = null, dirty = false, tab = "profile", saving = false;
 
@@ -29,6 +33,17 @@ function setMode(m){
 }
 document.querySelectorAll("[data-mode]").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
 const authMsg = (t, cls = "hint") => { $("auth-msg").textContent = t; $("auth-msg").className = cls; };
+const AUTH_ERRORS = {
+  "auth/invalid-credential": "That email and password don't match.",
+  "auth/wrong-password": "That email and password don't match.",
+  "auth/user-not-found": "That email and password don't match.",
+  "auth/invalid-login-credentials": "That email and password don't match.",
+  "auth/email-already-in-use": "That email already has an account. Sign in instead.",
+  "auth/weak-password": "Choose a stronger password (at least 8 characters).",
+  "auth/too-many-requests": "Too many attempts. Wait a few minutes and try again.",
+  "auth/operation-not-allowed": "Email sign-in isn't turned on yet in Firebase (Authentication → Email/Password).",
+  "auth/network-request-failed": "No connection. Check your internet and try again."
+};
 
 $("auth-form").addEventListener("submit", async e => {
   e.preventDefault();
@@ -36,67 +51,77 @@ $("auth-form").addEventListener("submit", async e => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return authMsg("Enter a valid email address.", "hint err");
   if (mode !== "reset" && password.length < 8) return authMsg("Passwords need at least 8 characters.", "hint err");
   const btn = $("auth-btn"); btn.disabled = true; authMsg("One moment…");
-  const redirect = location.origin + "/admin/";
   try {
-    if (mode === "signin") {
-      const {error} = await sb.auth.signInWithPassword({email, password});
-      if (error) throw error;
-      authMsg(""); await boot();
-    } else if (mode === "signup") {
-      const {data, error} = await sb.auth.signUp({email, password, options: {emailRedirectTo: redirect}});
-      if (error) throw error;
-      if (data.session) await boot();
-      else authMsg("Check your email and click the confirmation link, then come back and sign in.", "hint okc");
-    } else {
-      const {error} = await sb.auth.resetPasswordForEmail(email, {redirectTo: redirect});
-      if (error) throw error;
-      authMsg("If that email has an account, a reset link is on its way.", "hint okc");
-    }
+    if (mode === "signin") await auth.signInWithEmailAndPassword(email, password);
+    else if (mode === "signup") await auth.createUserWithEmailAndPassword(email, password);
+    else { await auth.sendPasswordResetEmail(email); authMsg("If that email has an account, a reset link is on its way. Check your inbox and spam folder.", "hint okc"); }
   } catch (err) {
-    const m = String(err?.message || "");
-    authMsg(/invalid login/i.test(m) ? "That email and password don't match." :
-            /not confirmed/i.test(m) ? "Confirm your email first. Check your inbox for the link." :
-            /already registered/i.test(m) ? "That email already has an account. Sign in instead." :
-            m || "Something went wrong. Please try again.", "hint err");
+    authMsg(AUTH_ERRORS[err && err.code] || "Something went wrong. Please try again.", "hint err");
   } finally { btn.disabled = false; }
-});
-
-$("np-form").addEventListener("submit", async e => {
-  e.preventDefault();
-  const password = $("np-pass").value;
-  if (password.length < 8) { $("np-msg").textContent = "Use at least 8 characters."; return; }
-  const {error} = await sb.auth.updateUser({password});
-  if (error) { $("np-msg").textContent = error.message; $("np-msg").className = "hint err"; return; }
-  $("np-msg").textContent = "Password saved."; $("np-msg").className = "hint okc";
-  history.replaceState(null, "", location.pathname);
-  setTimeout(boot, 800);
 });
 
 document.querySelectorAll("[data-signout]").forEach(b => b.addEventListener("click", async () => {
   if (dirty && !confirmLeave()) return;
-  await sb.auth.signOut(); dirty = false; me = null; role = null; setMode("signin"); show("v-auth");
+  dirty = false; await auth.signOut();
 }));
-$("pending-refresh").addEventListener("click", boot);
+$("pending-refresh").addEventListener("click", () => boot(auth.currentUser));
 
-let recovering = false;
-sb.auth.onAuthStateChange(event => { if (event === "PASSWORD_RECOVERY") { recovering = true; show("v-newpass"); } });
+/* Make sure every signed-in person has a users/{uid} record. The very first one becomes super admin. */
+async function ensureProfile(user){
+  const ref = db.collection("users").doc(user.uid);
+  const snap = await ref.get();
+  if (snap.exists) return snap.data();
+  const boot = await db.doc("meta/bootstrap").get();
+  if (!boot.exists) {
+    try {
+      const batch = db.batch();
+      batch.set(ref, {email: user.email, role: "super_admin", createdAt: TS()});
+      batch.set(db.doc("meta/bootstrap"), {uid: user.uid, createdAt: TS()});
+      await batch.commit();
+      return {email: user.email, role: "super_admin"};
+    } catch { /* someone else became super admin first */ }
+  }
+  await ref.set({email: user.email, role: "pending", createdAt: TS()});
+  return {email: user.email, role: "pending"};
+}
 
-async function boot(){
-  if (recovering) return;
-  const {data: {session}} = await sb.auth.getSession();
-  if (!session) { setMode("signin"); show("v-auth"); return; }
-  me = session.user;
-  const {data: prof} = await sb.from("profiles").select("role,email").eq("id", me.id).maybeSingle();
-  role = prof?.role || "pending";
-  if (role !== "admin" && role !== "super_admin") { $("pending-email").textContent = me.email; show("v-pending"); return; }
-  const {data: row, error} = await sb.from("site_content").select("data,updated_at").eq("id", 1).maybeSingle();
-  if (error || !row) { show("v-app"); $("content").innerHTML = `<div class="notice">The website content couldn't be loaded. Make sure <code>setup.sql</code> has been run in Supabase.</div>`; return; }
-  SAVED = row.data; S = structuredClone(SAVED); dirty = false;
-  $("me-email").textContent = me.email; $("me-role").textContent = ROLE_LABEL[role];
-  show("v-app"); drawNav(); draw();
-  setStatus(row.updated_at ? `Last published ${fmtWhen(row.updated_at)}.` : "All changes saved.");
+async function seedContent(){
+  /* First run: copy the starting content from the website into the database. */
+  const html = await (await fetch("/", {cache: "no-store"})).text();
+  const m = html.match(/<script type="application\/json" id="site-data">([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  const data = JSON.parse(m[1]);
+  await db.doc("site/content").set({data, updatedAt: TS(), updatedBy: me.uid});
+  return data;
+}
+
+async function loadMedia(obj){
+  const ids = [...new Set((JSON.stringify(obj).match(/"media:[\w-]+"/g) || []).map(m => m.slice(7, -1)))].filter(id => !(id in MEDIA));
+  await Promise.all(ids.map(id => db.collection("media").doc(id).get().then(d => { MEDIA[id] = d.exists ? d.data().data : ""; }).catch(() => {})));
+}
+
+async function boot(user){
+  if (!user) { me = null; role = null; setMode("signin"); show("v-auth"); return; }
+  me = user;
+  let prof;
+  try { prof = await ensureProfile(user); }
+  catch { authMsg("Couldn't load your account. Make sure the Firestore rules have been published.", "hint err"); show("v-auth"); return; }
+  role = prof.role;
+  if (role !== "admin" && role !== "super_admin") { $("pending-email").textContent = user.email; show("v-pending"); return; }
+  let snap, data;
+  try { snap = await db.doc("site/content").get(); data = snap.exists ? snap.data().data : await seedContent(); }
+  catch { data = null; }
+  $("me-email").textContent = user.email; $("me-role").textContent = ROLE_LABEL[role];
+  show("v-app");
+  if (!data) { $("savebar").hidden = true; $("content").innerHTML = `<div class="notice">The website content couldn't be loaded. Check that Firestore is set up and the rules are published, then reload.</div>`; return; }
+  await loadMedia(data);
+  SAVED = data; S = structuredClone(SAVED); dirty = false;
+  drawNav(); draw();
+  const when = snap && snap.exists ? snap.data().updatedAt : null;
+  setStatus(when ? `Last published ${fmtWhen(when)}.` : "All changes saved.");
   if (role === "super_admin") refreshPendingCount();
 }
+auth.onAuthStateChanged(user => boot(user));
 
 /* ---------------- editor helpers ---------------- */
 const get = path => path.reduce((o,k) => o?.[k], S);
@@ -250,7 +275,7 @@ content.addEventListener("click", e => {
     a.push(it);
   }
   if (b.dataset.op === "del") {
-    if (!b.dataset.confirm) { b.dataset.confirm = "1"; b.textContent = "Remove?"; b.classList.add("del"); return; }
+    if (!b.dataset.confirm) { b.dataset.confirm = "1"; b.textContent = "Remove?"; return; }
     a.splice(i,1);
   }
   if (b.dataset.op === "up" && i > 0) [a[i-1],a[i]] = [a[i],a[i-1]];
@@ -258,78 +283,104 @@ content.addEventListener("click", e => {
   markDirty(); draw();
 });
 
+/* Photos are shrunk in the browser and stored in the database (no paid storage plan needed). */
+async function compress(file){
+  const bmp = await createImageBitmap(file);
+  let max = 1600, q = 0.85, out = "";
+  for (let tries = 0; tries < 8; tries++) {
+    const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale); c.height = Math.round(bmp.height * scale);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    out = c.toDataURL("image/webp", q);
+    if (!out.startsWith("data:image/webp")) out = c.toDataURL("image/jpeg", q);
+    if (out.length < 900000) return out;
+    if (q > 0.6) q -= 0.1; else max = Math.round(max * 0.8);
+  }
+  throw new Error("too-large");
+}
 async function upload(path, file, input){
   if (!/^image\//.test(file.type)) { setStatus("Choose an image file (JPG, PNG or WebP).", "err"); return; }
-  if (file.size > 10 * 1024 * 1024) { setStatus("That photo is over 10 MB. Try a smaller one.", "err"); return; }
-  input.disabled = true; setStatus("Uploading photo…");
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-  const key = `uploads/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`;
-  const {error} = await sb.storage.from("media").upload(key, file, {cacheControl: "31536000", upsert: false, contentType: file.type});
-  input.disabled = false;
-  if (error) { setStatus("The photo didn't upload. Please try again.", "err"); return; }
-  set(path, sb.storage.from("media").getPublicUrl(key).data.publicUrl);
-  markDirty(); draw(); setStatus("Photo uploaded. Click Save & publish to put it on the website.");
+  input.disabled = true; setStatus("Preparing photo…");
+  try {
+    const data = await compress(file);
+    setStatus("Uploading photo…");
+    const ref = await db.collection("media").add({data, name: file.name.slice(0,120), createdAt: TS()});
+    MEDIA[ref.id] = data;
+    set(path, "media:" + ref.id);
+    markDirty(); draw(); setStatus("Photo uploaded. Click Save & publish to put it on the website.");
+  } catch {
+    input.disabled = false;
+    setStatus("The photo didn't upload. Try a different photo.", "err");
+  }
 }
 
 $("save").addEventListener("click", async () => {
   if (saving) return; saving = true; $("save").disabled = true; setStatus("Publishing…");
-  const {data, error} = await sb.from("site_content").update({data: S, updated_at: new Date().toISOString(), updated_by: me.id}).eq("id", 1).select("id");
-  saving = false; $("save").disabled = false;
-  if (error || !data || !data.length) { setStatus("Couldn't publish. Your access may have changed; try signing out and back in.", "err"); return; }
-  SAVED = structuredClone(S); dirty = false; setStatus(`Published ${fmtWhen(new Date())}. The website shows it now.`, "okc");
+  try {
+    await db.doc("site/content").set({data: JSON.parse(JSON.stringify(S)), updatedAt: TS(), updatedBy: me.uid});
+    SAVED = structuredClone(S); dirty = false; setStatus(`Published ${fmtWhen(new Date())}. The website shows it now.`, "okc");
+  } catch (err) {
+    setStatus(err && err.code === "permission-denied" ? "You don't have permission to publish. Ask a super admin." : "Couldn't publish. Check your connection and try again.", "err");
+  } finally { saving = false; $("save").disabled = false; }
 });
 $("discard").addEventListener("click", () => { if (!dirty) return; S = structuredClone(SAVED); dirty = false; draw(); setStatus("Changes discarded."); });
 window.addEventListener("beforeunload", e => { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
 
 /* ---------------- replies ---------------- */
 async function drawReplies(){
-  const {data, error} = await sb.from("replies").select("*").order("created_at", {ascending: false}).limit(500);
+  let docs;
+  try { docs = (await db.collection("replies").orderBy("createdAt", "desc").limit(500).get()).docs; }
+  catch { if (tab === "replies") content.innerHTML = `<p class="hint err">Replies couldn't be loaded.</p>`; return; }
   if (tab !== "replies") return;
-  if (error) { content.innerHTML = `<p class="hint err">Replies couldn't be loaded.</p>`; return; }
-  const tText = id => String((S.thoughts?.items || []).find(t => t.id === id)?.text || "(removed post)").slice(0,60);
-  content.innerHTML = data.length ? `<p class="hint">${data.length} ${data.length === 1 ? "reply" : "replies"} from visitors. Removing one takes it off the website right away.</p>
+  const tText = id => String(((S.thoughts && S.thoughts.items) || []).find(t => t.id === id)?.text || "(removed post)").slice(0,60);
+  content.innerHTML = docs.length ? `<p class="hint">${docs.length} ${docs.length === 1 ? "reply" : "replies"} from visitors. Removing one takes it off the website right away.</p>
     <div class="scroll"><table class="tbl"><thead><tr><th>On</th><th>From</th><th>Reply</th><th>When</th><th></th></tr></thead><tbody>
-    ${data.map(r => `<tr><td class="num" style="white-space:normal;max-width:180px">${esc(tText(r.thought_id))}</td><td>${esc(r.name)}</td><td>${esc(r.body)}</td><td class="num">${esc(fmtWhen(r.created_at))}</td>
-      <td><button class="btn danger sm" type="button" data-del-reply="${esc(r.id)}">Remove</button></td></tr>`).join("")}</tbody></table></div>`
+    ${docs.map(d => { const r = d.data(); return `<tr><td class="num" style="white-space:normal;max-width:180px">${esc(tText(r.thoughtId))}</td><td>${esc(r.name)}</td><td>${esc(r.body)}</td><td class="num">${esc(fmtWhen(r.createdAt))}</td>
+      <td><button class="btn danger sm" type="button" data-del-reply="${esc(d.id)}">Remove</button></td></tr>`; }).join("")}</tbody></table></div>`
     : `<div class="empty">No replies yet. They'll show here when visitors reply to your Thoughts.</div>`;
 }
 /* ---------------- subscribers ---------------- */
 let SUBS = [];
 async function drawSubscribers(){
-  const {data, error} = await sb.from("subscribers").select("*").order("created_at", {ascending: false});
+  let docs;
+  try { docs = (await db.collection("subscribers").orderBy("createdAt", "desc").get()).docs; }
+  catch { if (tab === "subscribers") content.innerHTML = `<p class="hint err">Subscribers couldn't be loaded.</p>`; return; }
   if (tab !== "subscribers") return;
-  if (error) { content.innerHTML = `<p class="hint err">Subscribers couldn't be loaded.</p>`; return; }
-  SUBS = data;
-  const daily = data.filter(s => s.frequency === "daily").length;
-  content.innerHTML = `<div class="stats"><div class="stat"><b>${data.length}</b><span>Total</span></div><div class="stat"><b>${daily}</b><span>Daily</span></div><div class="stat"><b>${data.length - daily}</b><span>Weekly</span></div></div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn ghost" type="button" id="export-csv" ${data.length ? "" : "disabled"}>Download as CSV</button></div>
+  SUBS = docs.map(d => ({id: d.id, ...d.data()}));
+  const daily = SUBS.filter(s => s.frequency === "daily").length;
+  content.innerHTML = `<div class="stats"><div class="stat"><b>${SUBS.length}</b><span>Total</span></div><div class="stat"><b>${daily}</b><span>Daily</span></div><div class="stat"><b>${SUBS.length - daily}</b><span>Weekly</span></div></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn ghost" type="button" id="export-csv" ${SUBS.length ? "" : "disabled"}>Download as CSV</button></div>
     <p class="hint">Upload the CSV to an email tool (Beehiiv, Kit, Mailchimp) when you're ready to send.</p>
-    ${data.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Email</th><th>Name</th><th>How often</th><th>Joined</th><th></th></tr></thead><tbody>
-    ${data.map(s => `<tr><td>${esc(s.email)}</td><td>${esc(s.name || "")}</td><td>${s.frequency === "daily" ? "Daily" : "Weekly"}</td><td class="num">${esc(fmtWhen(s.created_at))}</td>
+    ${SUBS.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Email</th><th>Name</th><th>How often</th><th>Joined</th><th></th></tr></thead><tbody>
+    ${SUBS.map(s => `<tr><td>${esc(s.email)}</td><td>${esc(s.name || "")}</td><td>${s.frequency === "daily" ? "Daily" : "Weekly"}</td><td class="num">${esc(fmtWhen(s.createdAt))}</td>
       <td><button class="btn danger sm" type="button" data-del-sub="${esc(s.id)}">Remove</button></td></tr>`).join("")}</tbody></table></div>`
     : `<div class="empty">No subscribers yet.</div>`}`;
 }
 /* ---------------- users ---------------- */
 async function drawUsers(){
   if (role !== "super_admin") { content.innerHTML = `<p class="hint">Only super admins can manage access.</p>`; return; }
-  const {data, error} = await sb.from("profiles").select("*").order("created_at", {ascending: true});
+  let users;
+  try { users = (await db.collection("users").orderBy("createdAt", "asc").get()).docs.map(d => ({id: d.id, ...d.data()})); }
+  catch { if (tab === "users") content.innerHTML = `<p class="hint err">Users couldn't be loaded.</p>`; return; }
   if (tab !== "users") return;
-  if (error) { content.innerHTML = `<p class="hint err">Users couldn't be loaded.</p>`; return; }
-  const pending = data.filter(u => u.role === "pending");
+  const pending = users.filter(u => u.role === "pending");
   content.innerHTML = `
     <div class="notice"><strong>How access works.</strong> <span class="hint" style="display:block;margin-top:4px">People request access at <strong>${esc(location.origin)}/admin</strong> with their email. They can't change anything until you give them a role here.<br>
-    <b>Admin</b>: edits the website, photos, replies and subscribers. <b>Super admin</b>: everything, plus this page. There must always be at least one super admin.</span></div>
+    <b>Admin</b>: edits the website, photos, replies and subscribers. <b>Super admin</b>: everything, plus this page. You can't change your own role, so there's always at least one super admin.</span></div>
     ${pending.length ? `<p class="hint" style="color:var(--gold)">${pending.length} ${pending.length === 1 ? "person is" : "people are"} waiting for approval.</p>` : ""}
     <div class="scroll"><table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>Joined</th></tr></thead><tbody>
-    ${data.map(u => `<tr><td>${esc(u.email)}${u.id === me.id ? ` <span class="chip muted">You</span>` : ""}</td>
-      <td>${u.id === me.id ? `<span class="chip">${ROLE_LABEL[u.role]}</span>`
-        : `<label class="sr" for="role-${esc(u.id)}" style="position:absolute;left:-9999px">Role for ${esc(u.email)}</label><select id="role-${esc(u.id)}" data-role-for="${esc(u.id)}">${["pending","admin","super_admin"].map(r => `<option value="${r}" ${u.role===r?"selected":""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`}</td>
-      <td class="num">${esc(fmtWhen(u.created_at))}</td></tr>`).join("")}</tbody></table></div>
+    ${users.map(u => `<tr><td>${esc(u.email)}${u.id === me.uid ? ` <span class="chip muted">You</span>` : ""}</td>
+      <td>${u.id === me.uid ? `<span class="chip">${ROLE_LABEL[u.role]}</span>`
+        : `<select aria-label="Role for ${esc(u.email)}" data-role-for="${esc(u.id)}">${["pending","admin","super_admin"].map(r => `<option value="${r}" ${u.role===r?"selected":""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`}</td>
+      <td class="num">${esc(fmtWhen(u.createdAt))}</td></tr>`).join("")}</tbody></table></div>
     <p class="hint" id="users-msg" role="status" aria-live="polite"></p>`;
 }
 async function refreshPendingCount(){
-  const {count} = await sb.from("profiles").select("id", {count: "exact", head: true}).eq("role", "pending");
-  const b = document.getElementById("pending-badge"); if (b) b.innerHTML = count ? `<span class="chip" style="margin-left:6px">${count}</span>` : "";
+  try {
+    const snap = await db.collection("users").where("role", "==", "pending").get();
+    const b = document.getElementById("pending-badge"); if (b) b.innerHTML = snap.size ? `<span class="chip" style="margin-left:6px">${snap.size}</span>` : "";
+  } catch {}
 }
 /* ---------------- account ---------------- */
 function drawAccount(){
@@ -348,14 +399,13 @@ content.addEventListener("click", async e => {
   const b = r || s; if (!b) return;
   if (!b.dataset.confirm) { b.dataset.confirm = "1"; b.textContent = "Click to confirm"; return; }
   b.disabled = true;
-  const {error} = r ? await sb.from("replies").delete().eq("id", r.dataset.delReply) : await sb.from("subscribers").delete().eq("id", s.dataset.delSub);
-  if (error) { b.textContent = "Couldn't remove"; return; }
-  draw();
+  try { await (r ? db.collection("replies").doc(r.dataset.delReply) : db.collection("subscribers").doc(s.dataset.delSub)).delete(); draw(); }
+  catch { b.textContent = "Couldn't remove"; }
 });
 content.addEventListener("click", e => {
   if (e.target.id !== "export-csv") return;
   const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const csv = ["email,name,frequency,joined", ...SUBS.map(s => [s.email, s.name, s.frequency, s.created_at].map(q).join(","))].join("\n");
+  const csv = ["email,name,frequency,joined", ...SUBS.map(s => [s.email, s.name, s.frequency, toDate(s.createdAt)?.toISOString() || ""].map(q).join(","))].join("\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], {type: "text/csv"}));
   a.download = `subscribers-${today()}.csv`; document.body.appendChild(a); a.click(); a.remove();
@@ -363,20 +413,18 @@ content.addEventListener("click", e => {
 content.addEventListener("change", async e => {
   const sel = e.target.closest("[data-role-for]"); if (!sel) return;
   const msg = $("users-msg"); sel.disabled = true; msg.textContent = "Saving…"; msg.className = "hint";
-  const {data, error} = await sb.from("profiles").update({role: sel.value}).eq("id", sel.dataset.roleFor).select("id");
-  sel.disabled = false;
-  if (error || !data?.length) { msg.textContent = /super admin/i.test(error?.message || "") ? "There must always be at least one super admin." : "That change didn't save."; msg.className = "hint err"; drawUsers(); return; }
-  msg.textContent = `Access updated to ${ROLE_LABEL[sel.value]}.`; msg.className = "hint okc"; refreshPendingCount();
+  try {
+    await db.collection("users").doc(sel.dataset.roleFor).update({role: sel.value});
+    msg.textContent = `Access updated to ${ROLE_LABEL[sel.value]}.`; msg.className = "hint okc"; refreshPendingCount();
+  } catch { msg.textContent = "That change didn't save."; msg.className = "hint err"; drawUsers(); }
+  finally { sel.disabled = false; }
 });
 content.addEventListener("submit", async e => {
   if (e.target.id !== "pw-form") return;
   e.preventDefault();
   const password = $("pw-new").value, msg = $("pw-msg");
   if (password.length < 8) { msg.textContent = "Use at least 8 characters."; msg.className = "hint err"; return; }
-  const {error} = await sb.auth.updateUser({password});
-  msg.textContent = error ? error.message : "Password updated."; msg.className = error ? "hint err" : "hint okc";
-  if (!error) $("pw-new").value = "";
+  try { await auth.currentUser.updatePassword(password); msg.textContent = "Password updated."; msg.className = "hint okc"; $("pw-new").value = ""; }
+  catch (err) { msg.textContent = err && err.code === "auth/requires-recent-login" ? "For security, sign out and back in, then try again." : "That didn't work. Please try again."; msg.className = "hint err"; }
 });
-
-boot();
 })();
