@@ -143,13 +143,14 @@ const fSelect = (label, path, opts) => `<label class="f"><span>${label}</span><s
 const fImage = (label, path) => { const src = imgSrc(get(path)); return `<div class="f"><span>${label}</span><div class="img-row">${src ? `<img src="${esc(src)}" alt="">` : ""}<div style="display:grid;gap:8px;flex:1">
   <input type="file" accept="image/*" data-upload="${P(path)}" aria-label="Upload ${esc(label)}">${src ? `<button class="btn ghost sm" type="button" data-clear="${P(path)}" style="justify-self:start">Remove photo</button>` : ""}</div></div></div>`; };
 
-function list(path, title, fields, blank, addLabel){
+function list(path, title, fields, blank, addLabel, top){
   const a = getArr(path);
-  return a.map((it,i) => `<div class="item"><div class="item-head"><strong>${esc(title(it || {}) || "Untitled")}</strong>
+  const addBtn = `<button class="add" type="button" data-op="add" data-list="${P(path)}" data-blank="${P(blank)}"${top ? ' data-top="1"' : ""}>+ ${addLabel}</button>`;
+  return (top ? addBtn : "") + a.map((it,i) => `<div class="item"><div class="item-head"><strong>${esc(title(it || {}) || "Untitled")}</strong>
     <button class="icon-btn" type="button" aria-label="Move up" title="Move up" data-op="up" data-list="${P(path)}" data-i="${i}">↑</button>
     <button class="icon-btn" type="button" aria-label="Move down" title="Move down" data-op="down" data-list="${P(path)}" data-i="${i}">↓</button>
     <button class="icon-btn del" type="button" aria-label="Remove" title="Remove" data-op="del" data-list="${P(path)}" data-i="${i}">✕</button></div>
-    ${fields(i)}</div>`).join("") + `<button class="add" type="button" data-op="add" data-list="${P(path)}" data-blank="${P(blank)}">+ ${addLabel}</button>`;
+    ${fields(i)}</div>`).join("") + (top ? "" : addBtn);
 }
 const PLATFORMS = [["instagram","Instagram"],["tiktok","TikTok"],["x","X"],["linkedin","LinkedIn"],["youtube","YouTube"],["facebook","Facebook"],["threads","Threads"],["website","Website"]];
 const today = () => new Date().toISOString().slice(0,10);
@@ -200,11 +201,18 @@ const CONTENT_TABS = {
       ${fText("Post", ["thoughts","items",i,"text"], {area:true})}
       ${fText("Date", ["thoughts","items",i,"date"], {type:"date"})}
       ${fText("Link to this post on X (optional)", ["thoughts","items",i,"xUrl"], {type:"url", ph:"https://x.com/agunwamiii/status/…"})}`,
-      {id:"",text:"",date:"",xUrl:""}, "Add thought")}`],
-  quote: ["Quote", () => `
-    ${fText("Label", ["quote","label"], {ph:"This week"})}
-    ${fText("Quote", ["quote","text"], {area:true})}
-    ${fText("Signed", ["quote","by"], {ph:"Angela"})}`],
+      {id:"",text:"",date:"",xUrl:""}, "Add thought", true)}`],
+  quote: ["Quotes", () => {
+    if (!S.quote || typeof S.quote !== "object") S.quote = {label: "This week"};
+    if (!Array.isArray(S.quote.items)) S.quote.items = S.quote.text ? [{text: S.quote.text, by: S.quote.by || "", date: ""}] : [];
+    return `
+    ${fText("Label above the quote", ["quote","label"], {ph:"This week"})}
+    <p class="hint">The quote at the top of the list is the one shown on the website. New quotes are added to the top, and older ones stay here as your archive. Use the arrows to bring an older one back.</p>
+    ${list(["quote","items"], q => String(q.text || "New quote").slice(0,48), i => `
+      ${fText("Quote", ["quote","items",i,"text"], {area:true})}
+      ${fText("Signed", ["quote","items",i,"by"], {ph:"Angela"})}
+      ${fText("Date", ["quote","items",i,"date"], {type:"date"})}`,
+      {text:"",by:"Angela",date:""}, "Add quote", true)}`; }],
   journal: ["Journal", () => `
     ${fText("Heading", ["journal","heading"])}
     <p class="hint">Published posts get a "Read post" link. Coming soon shows a teaser. Drafts are hidden from visitors.</p>
@@ -272,7 +280,7 @@ content.addEventListener("click", e => {
   if (b.dataset.op === "add") {
     const it = structuredClone(JSON.parse(b.dataset.blank));
     if (it && typeof it === "object") { if ("id" in it && !it.id) it.id = "t" + Date.now().toString(36); if ("date" in it && !it.date) it.date = today(); }
-    a.push(it);
+    if (b.dataset.top) a.unshift(it); else a.push(it);
   }
   if (b.dataset.op === "del") {
     if (!b.dataset.confirm) { b.dataset.confirm = "1"; b.textContent = "Remove?"; return; }

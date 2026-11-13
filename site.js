@@ -104,7 +104,8 @@ function render(){
     </article>`).join("") || `<p class="hint">Nothing here yet.</p>`}</div>
     </div></section>`; }
 
-  if (on.quote && S.quote && S.quote.text){ const Q = S.quote; h += `<section class="quote" aria-label="Quote"><div class="wrap">
+  const Qcur = S.quote ? (arr(S.quote.items).find(q => q && q.text) || (S.quote.text ? S.quote : null)) : null;
+  if (on.quote && Qcur){ const Q = {label: S.quote.label, text: Qcur.text, by: Qcur.by}; h += `<section class="quote" aria-label="Quote"><div class="wrap">
     <div class="sec-head" style="margin-bottom:28px"><span class="label">${esc(Q.label)}</span><span></span></div>
     <div class="indent"><blockquote>${esc(Q.text)}</blockquote>${Q.by ? `<p class="by">${esc(Q.by)}</p>` : ""}</div>
     </div></section>`; }
