@@ -213,17 +213,26 @@ const CONTENT_TABS = {
       ${fText("Signed", ["quote","items",i,"by"], {ph:"Angela"})}
       ${fText("Date", ["quote","items",i,"date"], {type:"date"})}`,
       {text:"",by:"Angela",date:""}, "Add quote", true)}`; }],
-  journal: ["Journal", () => `
+  journal: ["Journal", () => {
+    if (!S.journal || typeof S.journal !== "object") S.journal = {heading: "", posts: []};
+    if (!Array.isArray(S.journal.categories)) S.journal.categories = ["Life", "Building", "Tech"];
+    const cats = S.journal.categories.map(c => String(c || "").trim()).filter(Boolean);
+    const catOpts = i => { const cur = get(["journal","posts",i,"category"]) || ""; const list = cur && !cats.includes(cur) ? [...cats, cur] : cats; return [["", "No category"], ...list.map(c => [c, c])]; };
+    return `
     ${fText("Heading", ["journal","heading"])}
+    <h3 class="group-title">Categories</h3>
+    <p class="hint">Add, rename or remove the categories you can pick for each post.</p>
+    ${list(["journal","categories"], c => String(c || "New category"), i => fText("Category name", ["journal","categories",i], {ph:"e.g. Faith, Travel, Career"}), "", "Add category")}
+    <h3 class="group-title">Posts</h3>
     <p class="hint">Published posts get a "Read post" link. Coming soon shows a teaser. Drafts are hidden from visitors.</p>
     ${list(["journal","posts"], p => `${p.title || "Untitled"} (${({published:"published",soon:"coming soon",draft:"draft"})[p.status] || "draft"})`, i => `
       ${fText("Title", ["journal","posts",i,"title"])}
       ${fSelect("Status", ["journal","posts",i,"status"], [["published","Published"],["soon","Coming soon"],["draft","Draft (hidden)"]])}
-      ${fSelect("Category", ["journal","posts",i,"category"], [["Life","Life"],["Building","Building"],["Tech","Tech"]])}
+      ${fSelect("Category", ["journal","posts",i,"category"], catOpts(i))}
       ${fText("Date", ["journal","posts",i,"date"], {type:"date"})}
       ${fText("Short summary", ["journal","posts",i,"excerpt"], {area:true})}
       ${fText("Full post (leave a blank line between paragraphs)", ["journal","posts",i,"body"], {area:true, tall:true})}`,
-      {title:"New post",category:"Life",date:"",status:"draft",excerpt:"",body:""}, "Add post")}`],
+      {title:"New post",category:cats[0] || "",date:"",status:"draft",excerpt:"",body:""}, "Add post", true)}`; }],
   subscribe: ["Subscribe", () => `
     ${fText("Heading", ["subscribe","heading"])}
     ${fText("Text", ["subscribe","text"], {area:true})}
@@ -269,7 +278,7 @@ content.addEventListener("input", e => {
 });
 content.addEventListener("change", e => {
   const el = e.target;
-  if (el.dataset.path && (el.tagName === "SELECT" || el.type === "checkbox")) draw();
+  if (el.dataset.path && (el.tagName === "SELECT" || el.type === "checkbox" || el.dataset.path.includes('"categories"'))) draw();
   if (el.dataset.upload && el.files[0]) upload(JSON.parse(el.dataset.upload), el.files[0], el);
 });
 content.addEventListener("click", e => {
