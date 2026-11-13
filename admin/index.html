@@ -107,6 +107,16 @@ input:focus,textarea:focus,select:focus{border-color:var(--gold);outline:none}
 .stat span{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .empty{border:1px dashed var(--line);padding:28px;text-align:center;color:var(--muted)}
 .notice{border:1px solid var(--line);border-left:3px solid var(--gold);background:var(--panel);padding:14px 16px}
+
+/* access + video */
+.user-top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.perm-box{border:1px solid var(--line);padding:14px;margin:0;display:grid;gap:12px}
+.perm-box legend{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:0 6px}
+.perm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px 16px}
+.vid-row{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.vid-row video{width:160px;max-height:100px;background:#000;border:1px solid var(--line)}
+.progress{height:4px;background:var(--line);border-radius:2px;overflow:hidden;width:100%}
+.progress > i{display:block;height:100%;background:var(--gold);width:0}
 </style>
 </head>
 <body>
@@ -176,6 +186,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--gold);outline:none}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="/admin/admin.js"></script>
 </body>
 </html>

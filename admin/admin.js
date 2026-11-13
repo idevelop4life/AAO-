@@ -17,7 +17,12 @@ const ROLE_LABEL = {super_admin: "Super admin", admin: "Admin", pending: "No acc
 const toDate = t => t && t.toDate ? t.toDate() : (t ? new Date(t) : null);
 const fmtWhen = t => { const d = toDate(t); return !d || isNaN(d) ? "" : d.toLocaleString("en-US", {month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit"}); };
 
-let me = null, role = null, SAVED = null, S = null, dirty = false, tab = "profile", saving = false;
+let me = null, role = null, perms = [], myName = "", SAVED = null, S = null, dirty = false, tab = "profile", saving = false;
+const storage = (CFG.storageBucket && firebase.storage) ? firebase.storage() : null;
+
+/* Sections a super admin can grant to an admin. Content keys match the website data. */
+const PERM_LABELS = [["profile","Profile"],["socials","Social links"],["about","About"],["building","Building"],["interests","Interests"],["gallery","Gallery"],["thoughts","Thoughts"],["quote","Quotes"],["journal","Journal"],["subscribe","Subscribe"],["sections","Show / hide"],["replies","Replies"],["subscribers","Subscribers"]];
+const can = k => role === "super_admin" || perms.includes(k);
 
 /* ---------------- auth ---------------- */
 let mode = "signin";
@@ -106,16 +111,17 @@ async function boot(user){
   let prof;
   try { prof = await ensureProfile(user); }
   catch { authMsg("Couldn't load your account. Make sure the Firestore rules have been published.", "hint err"); show("v-auth"); return; }
-  role = prof.role;
+  role = prof.role; perms = Array.isArray(prof.perms) ? prof.perms : []; myName = prof.name || "";
   if (role !== "admin" && role !== "super_admin") { $("pending-email").textContent = user.email; show("v-pending"); return; }
   let snap, data;
   try { snap = await db.doc("site/content").get(); data = snap.exists ? snap.data().data : await seedContent(); }
   catch { data = null; }
-  $("me-email").textContent = user.email; $("me-role").textContent = ROLE_LABEL[role];
+  $("me-email").textContent = myName ? `${myName} · ${user.email}` : user.email; $("me-role").textContent = ROLE_LABEL[role];
   show("v-app");
   if (!data) { $("savebar").hidden = true; $("content").innerHTML = `<div class="notice">The website content couldn't be loaded. Check that Firestore is set up and the rules are published, then reload.</div>`; return; }
   await loadMedia(data);
   SAVED = data; S = structuredClone(SAVED); dirty = false;
+  if (!can(tab) && tab in CONTENT_TABS) tab = (PERM_LABELS.find(([k]) => can(k) && k in CONTENT_TABS) || [ "account" ])[0];
   drawNav(); draw();
   const when = snap && snap.exists ? snap.data().updatedAt : null;
   setStatus(when ? `Last published ${fmtWhen(when)}.` : "All changes saved.");
@@ -143,6 +149,13 @@ const fSelect = (label, path, opts) => `<label class="f"><span>${label}</span><s
 const fImage = (label, path) => { const src = imgSrc(get(path)); return `<div class="f"><span>${label}</span><div class="img-row">${src ? `<img src="${esc(src)}" alt="">` : ""}<div style="display:grid;gap:8px;flex:1">
   <input type="file" accept="image/*" data-upload="${P(path)}" aria-label="Upload ${esc(label)}">${src ? `<button class="btn ghost sm" type="button" data-clear="${P(path)}" style="justify-self:start">Remove photo</button>` : ""}</div></div></div>`; };
 
+const vidSrc = u => { u = String(u || "").trim(); return /^https:\/\//i.test(u) ? u : ""; };
+const fVideo = (label, path) => { const src = vidSrc(get(path)); return `<div class="f"><span>${label}</span><div class="vid-row">${src ? `<video src="${esc(src)}" muted playsinline preload="metadata"></video>` : ""}<div style="display:grid;gap:8px;flex:1;min-width:200px">
+  ${storage ? `<input type="file" accept="video/mp4,video/quicktime,video/webm" data-upload-video="${P(path)}" aria-label="Upload ${esc(label)}">` : `<p class="hint">Video uploads need Firebase Storage turned on.</p>`}
+  <div class="progress" data-progress="${P(path)}" hidden><i></i></div>
+  ${src ? `<button class="btn ghost sm" type="button" data-clear="${P(path)}" style="justify-self:start">Remove video</button>` : ""}</div></div>
+  <p class="hint">MP4 or MOV, up to 200 MB. Shorter clips load faster for visitors.</p></div>`; };
+
 function list(path, title, fields, blank, addLabel, top){
   const a = getArr(path);
   const addBtn = `<button class="add" type="button" data-op="add" data-list="${P(path)}" data-blank="${P(blank)}"${top ? ' data-top="1"' : ""}>+ ${addLabel}</button>`;
@@ -163,6 +176,7 @@ const CONTENT_TABS = {
     ${fText("Small line above your name", ["profile","kicker"])}
     ${fText("Tagline", ["profile","tagline"], {area:true})}
     ${fImage("Main photo", ["profile","photo"])}
+    ${fVideo("Main video (optional, plays silently in your photo frame; the photo shows while it loads)", ["profile","video"])}
     ${fText("Photo description (for screen readers)", ["profile","photoAlt"])}`],
   socials: ["Social links", () => list(["socials"], s => `${(PLATFORMS.find(p => p[0]===s.platform)||[,"Link"])[1]} ${s.handle||""}`, i => `
     ${fSelect("Platform", ["socials",i,"platform"], PLATFORMS)}
@@ -193,15 +207,17 @@ const CONTENT_TABS = {
     ${list(["interests","items"], x => x.title, i => fText("Title", ["interests","items",i,"title"]) + fText("Text", ["interests","items",i,"text"], {area:true}), {title:"",text:""}, "Add interest")}`],
   gallery: ["Gallery", () => `
     ${fText("Heading", ["gallery","heading"])}
-    ${list(["gallery","items"], g => g.caption || "Photo", i => fImage("Photo", ["gallery","items",i,"src"]) + fText("Caption (optional)", ["gallery","items",i,"caption"]), {src:"",caption:""}, "Add photo")}`],
+    <p class="hint">Each item can be a photo, a video, or both (the photo becomes the video's cover).</p>
+    ${list(["gallery","items"], g => g.caption || (g.video ? "Video" : "Photo"), i => fImage("Photo", ["gallery","items",i,"src"]) + fVideo("Video (optional)", ["gallery","items",i,"video"]) + fText("Caption (optional)", ["gallery","items",i,"caption"]), {src:"",video:"",caption:""}, "Add photo or video", true)}`],
   thoughts: ["Thoughts", () => `
     ${fText("Heading", ["thoughts","heading"])}
     <p class="hint">Short posts, like tweets. Newest shows first. Visitors can reply on the site; manage replies under Replies. Add the matching X link to show a "Reply on X" button too.</p>
     ${list(["thoughts","items"], t => String(t.text||"").slice(0,48), i => `
       ${fText("Post", ["thoughts","items",i,"text"], {area:true})}
+      ${fVideo("Video (optional)", ["thoughts","items",i,"video"])}
       ${fText("Date", ["thoughts","items",i,"date"], {type:"date"})}
       ${fText("Link to this post on X (optional)", ["thoughts","items",i,"xUrl"], {type:"url", ph:"https://x.com/agunwamiii/status/…"})}`,
-      {id:"",text:"",date:"",xUrl:""}, "Add thought", true)}`],
+      {id:"",text:"",date:"",xUrl:"",video:""}, "Add thought", true)}`],
   quote: ["Quotes", () => {
     if (!S.quote || typeof S.quote !== "object") S.quote = {label: "This week"};
     if (!Array.isArray(S.quote.items)) S.quote.items = S.quote.text ? [{text: S.quote.text, by: S.quote.by || "", date: ""}] : [];
@@ -248,10 +264,10 @@ const OTHER_TABS = {
 };
 
 function drawNav(){
-  const c = Object.entries(CONTENT_TABS).map(([k,[l]]) => btn(k,l)).join("");
-  const a = btn("replies", "Replies") + btn("subscribers", "Subscribers");
+  const c = Object.entries(CONTENT_TABS).filter(([k]) => can(k)).map(([k,[l]]) => btn(k,l)).join("");
+  const a = (can("replies") ? btn("replies", "Replies") : "") + (can("subscribers") ? btn("subscribers", "Subscribers") : "");
   const s = (role === "super_admin" ? btn("users", `Users &amp; access <span id="pending-badge"></span>`) : "") + btn("account", "My account");
-  $("tabs").innerHTML = `<span class="grp">Website</span>${c}<span class="grp">Audience</span>${a}<span class="grp">Access</span>${s}`;
+  $("tabs").innerHTML = (c ? `<span class="grp">Website</span>${c}` : "") + (a ? `<span class="grp">Audience</span>${a}` : "") + `<span class="grp">Access</span>${s}`;
   function btn(k,l){ return `<button type="button" data-tab="${k}" ${k===tab?'aria-current="page"':""}>${l}</button>`; }
 }
 $("tabs").addEventListener("click", e => {
@@ -261,6 +277,8 @@ $("tabs").addEventListener("click", e => {
 $("menu-btn").addEventListener("click", () => $("side").classList.toggle("open"));
 
 function draw(){
+  if (tab !== "account" && tab !== "users" && !can(tab)) tab = "account";
+  if (tab === "users" && role !== "super_admin") tab = "account";
   const isContent = tab in CONTENT_TABS;
   $("savebar").hidden = !isContent;
   $("tab-title").textContent = isContent ? CONTENT_TABS[tab][0] : OTHER_TABS[tab];
@@ -280,6 +298,7 @@ content.addEventListener("change", e => {
   const el = e.target;
   if (el.dataset.path && (el.tagName === "SELECT" || el.type === "checkbox" || el.dataset.path.includes('"categories"'))) draw();
   if (el.dataset.upload && el.files[0]) upload(JSON.parse(el.dataset.upload), el.files[0], el);
+  if (el.dataset.uploadVideo && el.files[0]) uploadVideo(JSON.parse(el.dataset.uploadVideo), el.files[0], el);
 });
 content.addEventListener("click", e => {
   const c = e.target.closest("[data-clear]");
@@ -332,11 +351,44 @@ async function upload(path, file, input){
   }
 }
 
+/* Videos go to Firebase Storage (needs the Blaze plan). */
+async function uploadVideo(path, file, input){
+  if (!storage) { setStatus("Video uploads need Firebase Storage turned on.", "err"); return; }
+  if (!/^video\//.test(file.type)) { setStatus("Choose a video file (MP4 or MOV).", "err"); input.value = ""; return; }
+  if (file.size > 200 * 1024 * 1024) { setStatus("That video is over 200 MB. Trim it or export a smaller version.", "err"); input.value = ""; return; }
+  const bar = content.querySelector(`[data-progress='${JSON.stringify(path)}']`);
+  const ext = (file.name.split(".").pop() || "mp4").toLowerCase().replace(/[^a-z0-9]/g, "") || "mp4";
+  const ref = storage.ref(`media/videos/${Date.now()}-${Math.random().toString(36).slice(2,8)}.${ext}`);
+  input.disabled = true; if (bar) bar.hidden = false; setStatus("Uploading video… 0%");
+  try {
+    const task = ref.put(file, {contentType: file.type, cacheControl: "public,max-age=31536000"});
+    task.on("state_changed", s => { const pct = Math.round(s.bytesTransferred / s.totalBytes * 100); setStatus(`Uploading video… ${pct}%`); if (bar) bar.firstElementChild.style.width = pct + "%"; });
+    await task;
+    set(path, await ref.getDownloadURL());
+    markDirty(); draw(); setStatus("Video uploaded. Click Save & publish to put it on the website.");
+  } catch (err) {
+    input.disabled = false; if (bar) bar.hidden = true;
+    const c = err && err.code || "";
+    setStatus(c === "storage/unauthorized" ? "You don't have permission to upload videos, or the storage rules aren't published yet." :
+              c === "storage/canceled" ? "Upload cancelled." :
+              /bucket|project-not-found|unknown/.test(c) ? "Video storage isn't set up yet in Firebase (Storage)." :
+              "The video didn't upload. Check your connection and try again.", "err");
+  }
+}
+
 $("save").addEventListener("click", async () => {
   if (saving) return; saving = true; $("save").disabled = true; setStatus("Publishing…");
   try {
-    await db.doc("site/content").set({data: JSON.parse(JSON.stringify(S)), updatedAt: TS(), updatedBy: me.uid});
-    SAVED = structuredClone(S); dirty = false; setStatus(`Published ${fmtWhen(new Date())}. The website shows it now.`, "okc");
+    /* Only write the sections that changed, so admins never overwrite each other's work. */
+    const changed = Object.keys(S).filter(k => JSON.stringify(S[k]) !== JSON.stringify(SAVED[k]));
+    const blocked = changed.filter(k => !can(k));
+    if (blocked.length) { setStatus("Some changes are in sections you can't edit. Click Discard changes and try again.", "err"); return; }
+    if (!changed.length) { dirty = false; setStatus("Nothing new to publish."); return; }
+    const upd = {updatedAt: TS(), updatedBy: me.uid};
+    for (const k of changed) upd["data." + k] = JSON.parse(JSON.stringify(S[k] ?? null));
+    await db.doc("site/content").update(upd);
+    for (const k of changed) SAVED[k] = structuredClone(S[k]);
+    dirty = false; setStatus(`Published ${fmtWhen(new Date())}. The website shows it now.`, "okc");
   } catch (err) {
     setStatus(err && err.code === "permission-denied" ? "You don't have permission to publish. Ask a super admin." : "Couldn't publish. Check your connection and try again.", "err");
   } finally { saving = false; $("save").disabled = false; }
@@ -384,14 +436,30 @@ async function drawUsers(){
   const pending = users.filter(u => u.role === "pending");
   content.innerHTML = `
     <div class="notice"><strong>How access works.</strong> <span class="hint" style="display:block;margin-top:4px">People request access at <strong>${esc(location.origin)}/admin</strong> with their email. They can't change anything until you give them a role here.<br>
-    <b>Admin</b>: edits the website, photos, replies and subscribers. <b>Super admin</b>: everything, plus this page. You can't change your own role, so there's always at least one super admin.</span></div>
+    <b>Admin</b>: edits only the sections you tick for them. <b>Super admin</b>: everything, including this page. You can't change your own role, so there's always at least one super admin.</span></div>
     ${pending.length ? `<p class="hint" style="color:var(--gold)">${pending.length} ${pending.length === 1 ? "person is" : "people are"} waiting for approval.</p>` : ""}
-    <div class="scroll"><table class="tbl"><thead><tr><th>Email</th><th>Role</th><th>Joined</th></tr></thead><tbody>
-    ${users.map(u => `<tr><td>${esc(u.email)}${u.id === me.uid ? ` <span class="chip muted">You</span>` : ""}</td>
-      <td>${u.id === me.uid ? `<span class="chip">${ROLE_LABEL[u.role]}</span>`
-        : `<select aria-label="Role for ${esc(u.email)}" data-role-for="${esc(u.id)}">${["pending","admin","super_admin"].map(r => `<option value="${r}" ${u.role===r?"selected":""}>${ROLE_LABEL[r]}</option>`).join("")}</select>`}</td>
-      <td class="num">${esc(fmtWhen(u.createdAt))}</td></tr>`).join("")}</tbody></table></div>
-    <p class="hint" id="users-msg" role="status" aria-live="polite"></p>`;
+    <p class="hint" id="users-msg" role="status" aria-live="polite"></p>
+    ${users.map(u => {
+      const self = u.id === me.uid, up = Array.isArray(u.perms) ? u.perms : [];
+      return `<div class="item user-card">
+        <div class="user-top">
+          <div style="min-width:0"><strong>${esc(u.name || u.email)}</strong>${self ? ` <span class="chip muted">You</span>` : ""}
+            ${u.name ? `<div class="hint">${esc(u.email)}</div>` : ""}<div class="hint">Joined ${esc(fmtWhen(u.createdAt))}</div></div>
+          ${self ? `<span class="chip">${ROLE_LABEL[u.role]}</span>`
+            : `<label class="f" style="min-width:170px"><span>Role</span><select data-role-for="${esc(u.id)}">${["pending","admin","super_admin"].map(r => `<option value="${r}" ${u.role===r?"selected":""}>${ROLE_LABEL[r]}</option>`).join("")}</select></label>`}
+        </div>
+        ${u.role === "admin" ? `<fieldset class="perm-box"><legend>Can edit <span class="hint">(${up.length} of ${PERM_LABELS.length})</span></legend>
+          <div class="perm-grid">${PERM_LABELS.map(([k,l]) => `<label class="f check"><input type="checkbox" data-perm-for="${esc(u.id)}" value="${k}" ${up.includes(k) ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" type="button" data-perm-all="${esc(u.id)}">Tick all</button><button class="btn ghost sm" type="button" data-perm-none="${esc(u.id)}">Untick all</button></div>
+          ${up.length ? "" : `<p class="hint" style="color:var(--gold)">This admin can't edit anything yet. Tick the sections they should manage.</p>`}
+        </fieldset>` : u.role === "super_admin" && !self ? `<p class="hint">Super admins can edit everything.</p>` : ""}
+      </div>`; }).join("")}`;
+}
+async function savePerms(uid){
+  const list = [...content.querySelectorAll(`[data-perm-for="${CSS.escape(uid)}"]:checked`)].map(i => i.value);
+  const msg = $("users-msg"); msg.textContent = "Saving…"; msg.className = "hint";
+  try { await db.collection("users").doc(uid).update({perms: list}); msg.textContent = "Access saved."; msg.className = "hint okc"; drawUsers(); }
+  catch { msg.textContent = "That change didn't save."; msg.className = "hint err"; drawUsers(); }
 }
 async function refreshPendingCount(){
   try {
@@ -401,8 +469,16 @@ async function refreshPendingCount(){
 }
 /* ---------------- account ---------------- */
 function drawAccount(){
-  content.innerHTML = `<p class="hint">Signed in as <strong>${esc(me.email)}</strong> · ${ROLE_LABEL[role]}</p>
-    <form id="pw-form" style="display:grid;gap:14px;max-width:380px" novalidate>
+  content.innerHTML = `
+    <form id="name-form" style="display:grid;gap:14px;max-width:420px" novalidate>
+      <h3 class="group-title" style="margin-top:0">Your profile</h3>
+      <p class="hint">${esc(me.email)} · ${ROLE_LABEL[role]}</p>
+      <label class="f" for="me-name"><span>Display name</span><input type="text" id="me-name" maxlength="80" value="${esc(myName)}" placeholder="e.g. Angela" autocomplete="name"></label>
+      <button class="btn" type="submit" style="justify-self:start">Save profile</button>
+      <p class="hint" id="name-msg" role="status" aria-live="polite"></p>
+    </form>
+    ${role === "admin" ? `<div><h3 class="group-title">What you can edit</h3><p class="hint">${perms.length ? PERM_LABELS.filter(([k]) => perms.includes(k)).map(([,l]) => l).join(", ") : "Nothing yet. Ask a super admin to give you access."}</p></div>` : ""}
+    <form id="pw-form" style="display:grid;gap:14px;max-width:420px" novalidate>
       <h3 class="group-title">Change password</h3>
       <label class="f" for="pw-new"><span>New password (8+ characters)</span><input type="password" id="pw-new" autocomplete="new-password" minlength="8"></label>
       <button class="btn" type="submit" style="justify-self:start">Update password</button>
@@ -427,12 +503,26 @@ content.addEventListener("click", e => {
   a.href = URL.createObjectURL(new Blob([csv], {type: "text/csv"}));
   a.download = `subscribers-${today()}.csv`; document.body.appendChild(a); a.click(); a.remove();
 });
+content.addEventListener("change", e => { const c = e.target.closest("[data-perm-for]"); if (c) savePerms(c.dataset.permFor); });
+content.addEventListener("click", e => {
+  const all = e.target.closest("[data-perm-all]"), none = e.target.closest("[data-perm-none]");
+  const uid = (all || none) && (all ? all.dataset.permAll : none.dataset.permNone); if (!uid) return;
+  content.querySelectorAll(`[data-perm-for="${CSS.escape(uid)}"]`).forEach(i => i.checked = !!all);
+  savePerms(uid);
+});
+content.addEventListener("submit", async e => {
+  if (e.target.id !== "name-form") return;
+  e.preventDefault();
+  const name = $("me-name").value.trim().slice(0,80), msg = $("name-msg");
+  try { await db.collection("users").doc(me.uid).update({name}); myName = name; $("me-email").textContent = name ? `${name} · ${me.email}` : me.email; msg.textContent = "Profile saved."; msg.className = "hint okc"; }
+  catch { msg.textContent = "That didn't save. Please try again."; msg.className = "hint err"; }
+});
 content.addEventListener("change", async e => {
   const sel = e.target.closest("[data-role-for]"); if (!sel) return;
   const msg = $("users-msg"); sel.disabled = true; msg.textContent = "Saving…"; msg.className = "hint";
   try {
     await db.collection("users").doc(sel.dataset.roleFor).update({role: sel.value});
-    msg.textContent = `Access updated to ${ROLE_LABEL[sel.value]}.`; msg.className = "hint okc"; refreshPendingCount();
+    msg.textContent = `Access updated to ${ROLE_LABEL[sel.value]}.`; msg.className = "hint okc"; refreshPendingCount(); drawUsers();
   } catch { msg.textContent = "That change didn't save."; msg.className = "hint err"; drawUsers(); }
   finally { sel.disabled = false; }
 });

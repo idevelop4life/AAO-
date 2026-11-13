@@ -17,12 +17,21 @@ service cloud.firestore {
     function myRole() { return get(userDoc(request.auth.uid)).data.role; }
     function isStaff() { return signedIn() && exists(userDoc(request.auth.uid)) && myRole() in ['admin', 'super_admin']; }
     function isSuper() { return signedIn() && exists(userDoc(request.auth.uid)) && myRole() == 'super_admin'; }
+    function myPerms() { return get(userDoc(request.auth.uid)).data.get('perms', []); }
+    function canDo(section) { return isSuper() || (isStaff() && section in myPerms()); }
     function bootstrapPath() { return /databases/$(database)/documents/meta/bootstrap; }
 
-    // Website content: everyone reads, staff edits.
+    // Website content: everyone reads. Super admins edit everything;
+    // admins can only change the sections a super admin ticked for them.
     match /site/{doc} {
       allow read: if true;
-      allow write: if isStaff();
+      allow create: if isSuper();
+      allow update: if isSuper() || (
+        isStaff()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['data', 'updatedAt', 'updatedBy'])
+        && request.resource.data.data.diff(resource.data.data).affectedKeys().hasOnly(myPerms())
+      );
+      allow delete: if false;
     }
 
     // Uploaded photos (stored as compressed images): everyone reads, staff uploads/removes.
@@ -50,10 +59,15 @@ service cloud.firestore {
               && existsAfter(bootstrapPath()))
         );
 
-      // Only super admins change roles, never their own (so one always remains).
-      allow update: if isSuper() && request.auth.uid != uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
-        && request.resource.data.role in ['pending', 'admin', 'super_admin'];
+      // Super admins change other people's role and section access (never their own role,
+      // so one always remains). Everyone can update their own display name.
+      allow update: if (isSuper() && request.auth.uid != uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'perms'])
+          && request.resource.data.role in ['pending', 'admin', 'super_admin']
+          && request.resource.data.get('perms', []) is list)
+        || (signedIn() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+          && request.resource.data.name is string && request.resource.data.name.size() <= 80);
 
       allow delete: if false;
     }
@@ -75,7 +89,7 @@ service cloud.firestore {
         && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
         && request.resource.data.body is string && request.resource.data.body.size() > 0 && request.resource.data.body.size() <= 500
         && request.resource.data.createdAt == request.time;
-      allow delete: if isStaff();
+      allow delete: if canDo('replies');
     }
 
     // Newsletter subscribers: anyone can join (one entry per email), staff can view/remove.
@@ -86,7 +100,7 @@ service cloud.firestore {
         && request.resource.data.name is string && request.resource.data.name.size() <= 80
         && request.resource.data.frequency in ['daily', 'weekly']
         && request.resource.data.createdAt == request.time;
-      allow read, delete: if isStaff();
+      allow read, delete: if canDo('subscribers');
     }
   }
 }

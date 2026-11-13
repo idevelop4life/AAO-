@@ -9,7 +9,8 @@ Personal site with a private admin. Black and gold, plain HTML/JS, hosted on Ver
 | `index.html` + `site.js` | The public website |
 | `admin/` | The admin app at **/admin** |
 | `config.js` | Firebase web config (public by design) |
-| `firestore.rules` | Security rules: who can read and change what. Paste into Firebase once. |
+| `firestore.rules` | Database security rules: who can read and change what. Paste into Firebase. |
+| `storage.rules` | Video storage rules. Paste into Firebase Storage. |
 | `images/` | Starting photos. New uploads are compressed and stored in Firestore. |
 
 ## Roles
@@ -17,11 +18,12 @@ Personal site with a private admin. Black and gold, plain HTML/JS, hosted on Ver
 | Role | Can do |
 |---|---|
 | **Super admin** | Everything, plus approve people and change anyone's role under *Users & access* |
-| **Admin** | Edit all website content and photos, manage replies and subscribers |
+| **Admin** | Edits only the sections a super admin ticks for them (e.g. Journal and Thoughts) |
 | **No access** | Signed up but waiting for approval; can't change anything |
 
 - The **first account ever created** becomes super admin automatically.
 - Everyone after that starts with no access until a super admin approves them.
+- Section access is enforced by the database: an admin's save is rejected if it touches a section they weren't given.
 - Nobody can change their own role, so there is always at least one super admin.
 - Permissions are enforced by Firestore security rules, not just the page, so they can't be bypassed from the browser.
 
@@ -34,6 +36,10 @@ Personal site with a private admin. Black and gold, plain HTML/JS, hosted on Ver
 5. **Project settings → Your apps → Web (</>)**: register the app and copy the config values into `config.js`.
 6. **Authentication → Settings → Authorized domains:** add the Vercel domain.
 7. Go to **/admin**, click **Request access**, and create the first account. It becomes super admin, and the starting content is copied into the database automatically.
+
+## Videos
+
+Videos (MP4/MOV up to 200 MB) upload to Firebase Storage, which needs the Blaze plan (the first 5 GB stored is free). They can go in the main photo frame (Profile), in Thoughts posts, and in the Gallery.
 
 ## Editing
 

@@ -13,6 +13,8 @@ const MEDIA = {};
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const safeUrl = u => { u = String(u || "").trim(); if (!u) return ""; return /^(https?:|mailto:|\/)/i.test(u) ? u : "https://" + u.replace(/^\/+/, ""); };
 const imgSrc = u => { u = String(u || "").trim(); if (u.startsWith("media:")) return MEDIA[u.slice(6)] || ""; return /^(https?:|\/|data:image\/)/i.test(u) || (/^[\w./-]+$/.test(u) && !u.includes("..")) ? u : ""; };
+const vidSrc = u => { u = String(u || "").trim(); return /^https:\/\//i.test(u) ? u : ""; };
+const NO_MOTION = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const gold = t => esc(t).replace(/\*([^*]+)\*/g, "<em>$1</em>");
 const plain = t => String(t || "").replace(/\*/g, "");
 const arr = a => Array.isArray(a) ? a : [];
@@ -55,7 +57,8 @@ function render(){
     <p class="kicker">${esc(P.kicker)}</p><h1>${nameHTML(P.name)}</h1>
     <p class="lede">${esc(P.tagline)}</p>
     <ul class="socials" aria-label="Social links">${socialsHTML(true)}</ul></div>
-    ${imgSrc(P.photo) ? `<figure class="portrait"><img src="${esc(imgSrc(P.photo))}" alt="${esc(P.photoAlt)}"></figure>` : ""}
+    ${vidSrc(P.video) ? `<figure class="portrait has-video"><video src="${esc(vidSrc(P.video))}" ${imgSrc(P.photo) ? `poster="${esc(imgSrc(P.photo))}"` : ""} ${NO_MOTION ? "controls" : "autoplay"} muted loop playsinline preload="metadata" aria-label="${esc(P.photoAlt || "Video of " + plain(P.name))}"></video>${NO_MOTION ? "" : `<button class="sound" type="button" data-sound aria-pressed="false">Sound on</button>`}</figure>`
+      : imgSrc(P.photo) ? `<figure class="portrait"><img src="${esc(imgSrc(P.photo))}" alt="${esc(P.photoAlt)}"></figure>` : ""}
   </div></section>`;
 
   if (on.about && S.about){ const A = S.about; h += `<section class="block" id="about"><div class="wrap">
@@ -78,10 +81,10 @@ function render(){
     <div class="interests">${arr(I.items).map(i => `<div class="interest"><h3>${esc(i.title)}</h3><p>${esc(i.text)}</p></div>`).join("")}</div>
     </div></section>`; }
 
-  if (on.gallery && S.gallery){ const G = S.gallery, pics = arr(G.items).map((g,i) => [g,i]).filter(([g]) => imgSrc(g.src));
+  if (on.gallery && S.gallery){ const G = S.gallery, pics = arr(G.items).map((g,i) => [g,i]).filter(([g]) => imgSrc(g.src) || vidSrc(g.video));
     h += `<section class="block" id="gallery"><div class="wrap">
     <div class="sec-head"><span class="label">Gallery</span><h2>${esc(G.heading)}</h2></div>
-    ${pics.length ? `<div class="gallery">${pics.map(([g,i]) => `<figure><button type="button" class="ph" data-photo="${i}" aria-label="Open photo${g.caption ? ": " + esc(g.caption) : ""}"><img src="${esc(imgSrc(g.src))}" alt="${esc(g.caption)}" loading="lazy"></button>${g.caption ? `<figcaption>${esc(g.caption)}</figcaption>` : ""}</figure>`).join("")}</div>`
+    ${pics.length ? `<div class="gallery">${pics.map(([g,i]) => `<figure><button type="button" class="ph${vidSrc(g.video) ? " is-video" : ""}" data-photo="${i}" aria-label="${vidSrc(g.video) ? "Play video" : "Open photo"}${g.caption ? ": " + esc(g.caption) : ""}">${imgSrc(g.src) ? `<img src="${esc(imgSrc(g.src))}" alt="${esc(g.caption)}" loading="lazy">` : `<video src="${esc(vidSrc(g.video))}#t=0.1" muted playsinline preload="metadata" aria-hidden="true"></video>`}${vidSrc(g.video) ? `<span class="play" aria-hidden="true"></span>` : ""}</button>${g.caption ? `<figcaption>${esc(g.caption)}</figcaption>` : ""}</figure>`).join("")}</div>`
       : `<p class="hint indent">Photos coming soon.</p>`}
     </div></section>`; }
 
@@ -94,6 +97,7 @@ function render(){
     <div class="feed indent">${items.map(t => `<article class="thought">
       <header>${imgSrc(P.photo) ? `<img class="av" src="${esc(imgSrc(P.photo))}" alt="">` : ""}<p><strong>${esc(who)}</strong> <span class="mut">${esc(handle)} · ${esc(fmtDate(t.date))}</span></p></header>
       <p class="tx">${esc(t.text).replace(/\n/g,"<br>")}</p>
+      ${vidSrc(t.video) ? `<video class="tvid" src="${esc(vidSrc(t.video))}" controls playsinline preload="metadata"></video>` : ""}
       <div class="acts">${sb ? `<button class="lnk" type="button" data-reply-toggle="${esc(t.id)}">Reply</button>` : ""}${t.xUrl ? `<a href="${esc(safeUrl(t.xUrl))}" target="_blank" rel="noopener">Reply on X →</a>` : ""}<span class="mut" data-count="${esc(t.id)}"></span></div>
       <ul class="replies" data-replies="${esc(t.id)}"></ul>
       ${sb ? `<form class="reply-form" data-reply-form="${esc(t.id)}" hidden>
@@ -141,7 +145,7 @@ function render(){
 /* reader / lightbox */
 const reader = document.getElementById("reader");
 function showReader(wide){ document.getElementById("reader-body").classList.toggle("wide", wide); reader.hidden = false; document.body.style.overflow = "hidden"; document.getElementById("reader-close").focus(); }
-function closeReader(){ reader.hidden = true; document.body.style.overflow = ""; }
+function closeReader(){ reader.hidden = true; document.body.style.overflow = ""; document.getElementById("reader-body").innerHTML = ""; }
 function openPost(i){
   const p = arr(S.journal && S.journal.posts)[i]; if (!p) return;
   document.getElementById("reader-body").innerHTML = `<span class="meta">${esc([fmtDate(p.date), p.category].filter(Boolean).join(" · "))}</span><h2 id="reader-title">${esc(p.title)}</h2>${paras(p.body)}`;
@@ -149,7 +153,10 @@ function openPost(i){
 }
 function openPhoto(i){
   const g = arr(S.gallery && S.gallery.items)[i]; if (!g) return;
-  document.getElementById("reader-body").innerHTML = `<figure class="lb"><img src="${esc(imgSrc(g.src))}" alt="${esc(g.caption)}">${g.caption ? `<figcaption id="reader-title">${esc(g.caption)}</figcaption>` : ""}</figure>`;
+  const media = vidSrc(g.video)
+    ? `<video src="${esc(vidSrc(g.video))}" ${imgSrc(g.src) ? `poster="${esc(imgSrc(g.src))}"` : ""} controls autoplay playsinline></video>`
+    : `<img src="${esc(imgSrc(g.src))}" alt="${esc(g.caption)}">`;
+  document.getElementById("reader-body").innerHTML = `<figure class="lb">${media}${g.caption ? `<figcaption id="reader-title">${esc(g.caption)}</figcaption>` : ""}</figure>`;
   showReader(true);
 }
 document.getElementById("reader-close").addEventListener("click", closeReader);
@@ -192,6 +199,8 @@ async function postReply(form){
 /* clicks and forms */
 const main = document.getElementById("top");
 main.addEventListener("click", e => {
+  const snd = e.target.closest("[data-sound]");
+  if (snd) { const v = snd.parentElement.querySelector("video"); v.muted = !v.muted; if (!v.muted) v.play().catch(() => {}); snd.textContent = v.muted ? "Sound on" : "Sound off"; snd.setAttribute("aria-pressed", String(!v.muted)); return; }
   const b = e.target.closest("[data-read],[data-photo],[data-reply-toggle]"); if (!b) return;
   if (b.dataset.read) openPost(+b.dataset.read);
   if (b.dataset.photo) openPhoto(+b.dataset.photo);
