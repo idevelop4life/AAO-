@@ -227,6 +227,10 @@ function list(path, title, fields, blank, addLabel, top){
     ${fields(i)}</div>`).join("") + (top ? "" : addBtn);
 }
 const PLATFORMS = [["instagram","Instagram"],["tiktok","TikTok"],["x","X"],["linkedin","LinkedIn"],["youtube","YouTube"],["facebook","Facebook"],["threads","Threads"],["website","Website"]];
+/* Post to X: opens X with the text and a link back to the site. A link counts as 23 characters on X. */
+const X_LINK = () => location.origin + "/#thoughts";
+const xCount = txt => { const n = String(txt || "").trim().length + 24; return n <= 280 ? `${280 - n} characters left on X` : `${n - 280} characters too long for X; it will be shortened`; };
+function xText(txt){ txt = String(txt || "").trim(); const room = 280 - 24; return txt.length > room ? txt.slice(0, room - 1).trimEnd() + "…" : txt; }
 const today = () => new Date().toISOString().slice(0,10);
 
 /* ---------------- tabs ---------------- */
@@ -272,9 +276,10 @@ const CONTENT_TABS = {
     ${list(["gallery","items"], g => g.caption || (g.video ? "Video" : "Photo"), i => fImage("Photo", ["gallery","items",i,"src"]) + fVideo("Video (optional)", ["gallery","items",i,"video"]) + fText("Caption (optional)", ["gallery","items",i,"caption"]), {src:"",video:"",caption:""}, "Add photo or video", true)}`],
   thoughts: ["Thoughts", () => `
     ${fText("Heading", ["thoughts","heading"])}
-    <p class="hint">Short posts, like tweets. Newest shows first. Visitors can reply on the site; manage replies under Replies. Add the matching X link to show a "Reply on X" button too.</p>
+    <p class="hint">Short posts, like tweets. Newest shows first. Click "Post to X" to share a post on X, then paste its link below so visitors see a "Reply on X" button. Replies on the site show under Replies.</p>
     ${list(["thoughts","items"], t => String(t.text||"").slice(0,48), i => `
       ${fText("Post", ["thoughts","items",i,"text"], {area:true})}
+      <div class="row-btns" style="align-items:center"><button class="btn sm" type="button" data-post-x="${i}">Post to X</button><span class="hint" data-x-count="${i}">${xCount(get(["thoughts","items",i,"text"]))}</span></div>
       ${fVideo("Video (optional)", ["thoughts","items",i,"video"])}
       ${fText("Date", ["thoughts","items",i,"date"], {type:"date"})}
       ${fText("Link to this post on X (optional)", ["thoughts","items",i,"xUrl"], {type:"url", ph:"https://x.com/agunwamiii/status/…"})}`,
@@ -352,6 +357,8 @@ function draw(){
 const content = $("content");
 content.addEventListener("input", e => {
   const el = e.target; if (!el.dataset.path) return;
+  const pth = JSON.parse(el.dataset.path);
+  if (pth[0] === "thoughts" && pth[3] === "text") { const c = content.querySelector(`[data-x-count="${pth[2]}"]`); if (c) c.textContent = xCount(el.value); }
   set(JSON.parse(el.dataset.path), el.type === "checkbox" ? el.checked : el.value);
   markDirty();
 });
@@ -474,6 +481,15 @@ content.addEventListener("input", e => {
   s.nextElementSibling.textContent = fmtSec(s.value); en.nextElementSibling.textContent = full ? "Full" : fmtSec(en.value);
   const v = ed.querySelector("video"); v.pause(); v.currentTime = +r.value;
   markDirty();
+});
+content.addEventListener("click", e => {
+  const b = e.target.closest("[data-post-x]"); if (!b) return;
+  const t = get(["thoughts","items",+b.dataset.postX]) || {};
+  if (!String(t.text || "").trim()) { setStatus("Write the post first, then click Post to X.", "err"); return; }
+  const url = "https://x.com/intent/tweet?text=" + encodeURIComponent(xText(t.text)) + "&url=" + encodeURIComponent(X_LINK());
+  const w = window.open(url, "_blank"); if (w) { try { w.opener = null; } catch {} }
+  setStatus(w === null ? "Your browser blocked the X window. Allow pop-ups for this site and try again."
+    : "X opened in a new tab. Press Post there, then copy the post's link into \"Link to this post on X\" here and click Save & publish.");
 });
 let clipStop = null;
 content.addEventListener("click", async e => {
