@@ -50,8 +50,8 @@ const linkText = u => String(u).replace(/^https?:\/\//,"").replace(/\/$/,"");
 
 function render(){
   const P = S.profile || {}, on = S.sections || {};
-  const navItems = [["about","About",true],["building","Building",true],["gallery","Gallery",true],["thoughts","Thoughts",false],["journal","Journal",false],["subscribe","Subscribe",false]].filter(([k]) => on[k]);
-  document.getElementById("nav").innerHTML = navItems.map(([k,l,opt]) => `<li${opt?' class="opt"':""}><a href="#${k}">${l}</a></li>`).join("");
+  const navItems = [["about","About","opt"],["building","Building","opt"],["gallery","Gallery","opt"],["thoughts","Thoughts","opt3"],["journal","Journal","opt2"],["subscribe","Subscribe",""]].filter(([k]) => on[k]);
+  document.getElementById("nav").innerHTML = navItems.map(([k,l,cls]) => `<li${cls?` class="${cls}"`:""}><a href="#${k}">${l}</a></li>`).join("");
 
   let h = `<section class="hero"><div class="wrap"><div>
     <p class="kicker">${esc(P.kicker)}</p><h1>${nameHTML(P.name)}</h1>
