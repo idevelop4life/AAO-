@@ -5,6 +5,20 @@ const $ = id => document.getElementById(id);
 const VIEWS = ["v-setup","v-auth","v-pending","v-app"];
 const show = v => VIEWS.forEach(x => $(x).hidden = x !== v);
 
+/* Light / dark mode switch, remembered on this device. */
+function syncTheme(){
+  const light = document.documentElement.dataset.theme === "light";
+  document.querySelectorAll("[data-theme-toggle]").forEach(b => { b.textContent = light ? "Dark mode" : "Light mode"; b.setAttribute("aria-pressed", String(light)); });
+}
+document.addEventListener("click", e => {
+  if (!e.target.closest("[data-theme-toggle]")) return;
+  const light = document.documentElement.dataset.theme !== "light";
+  if (light) document.documentElement.dataset.theme = "light"; else delete document.documentElement.dataset.theme;
+  try { localStorage.setItem("admin-theme", light ? "light" : "dark"); } catch {}
+  syncTheme();
+});
+syncTheme();
+
 if (!CFG.apiKey || !CFG.projectId || !window.firebase) { show("v-setup"); return; }
 firebase.initializeApp(CFG);
 const auth = firebase.auth(), db = firebase.firestore();
@@ -272,7 +286,7 @@ function drawNav(){
 }
 $("tabs").addEventListener("click", e => {
   const b = e.target.closest("[data-tab]"); if (!b) return;
-  tab = b.dataset.tab; drawNav(); draw(); window.scrollTo(0,0); $("side").classList.remove("open");
+  tab = b.dataset.tab; usersNote = null; drawNav(); draw(); window.scrollTo(0,0); $("side").classList.remove("open");
 });
 $("menu-btn").addEventListener("click", () => $("side").classList.toggle("open"));
 
@@ -427,6 +441,8 @@ async function drawSubscribers(){
     : `<div class="empty">No subscribers yet.</div>`}`;
 }
 /* ---------------- users ---------------- */
+let usersNote = null; /* [text, cls] shown after the list redraws */
+function noteUsers(text, cls){ usersNote = [text, cls]; const m = $("users-msg"); if (m) { m.textContent = text; m.className = cls; } }
 async function drawUsers(){
   if (role !== "super_admin") { content.innerHTML = `<p class="hint">Only super admins can manage access.</p>`; return; }
   let users;
@@ -438,7 +454,7 @@ async function drawUsers(){
     <div class="notice"><strong>How access works.</strong> <span class="hint" style="display:block;margin-top:4px">People request access at <strong>${esc(location.origin)}/admin</strong> with their email. They can't change anything until you give them a role here.<br>
     <b>Admin</b>: edits only the sections you tick for them. <b>Super admin</b>: everything, including this page. You can't change your own role, so there's always at least one super admin.</span></div>
     ${pending.length ? `<p class="hint" style="color:var(--gold)">${pending.length} ${pending.length === 1 ? "person is" : "people are"} waiting for approval.</p>` : ""}
-    <p class="hint" id="users-msg" role="status" aria-live="polite"></p>
+    <p class="${usersNote ? usersNote[1] : "hint"}" id="users-msg" role="status" aria-live="polite">${usersNote ? esc(usersNote[0]) : ""}</p>
     ${users.map(u => {
       const self = u.id === me.uid, up = Array.isArray(u.perms) ? u.perms : [];
       return `<div class="item user-card">
@@ -453,12 +469,26 @@ async function drawUsers(){
           <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" type="button" data-perm-all="${esc(u.id)}">Tick all</button><button class="btn ghost sm" type="button" data-perm-none="${esc(u.id)}">Untick all</button></div>
           ${up.length ? "" : `<p class="hint" style="color:var(--gold)">This admin can't edit anything yet. Tick the sections they should manage.</p>`}
         </fieldset>` : u.role === "super_admin" && !self ? `<p class="hint">Super admins can edit everything.</p>` : ""}
+        ${self ? "" : `<div><button class="btn danger sm" type="button" data-remove-user="${esc(u.id)}" data-email="${esc(u.email)}">Remove account</button></div>`}
       </div>`; }).join("")}`;
 }
+async function removeUser(btn){
+  if (!btn.dataset.confirm) { btn.dataset.confirm = "1"; btn.textContent = `Click again to remove ${btn.dataset.email}`; return; }
+  const msg = $("users-msg"); btn.disabled = true; msg.textContent = "Removing…"; msg.className = "hint";
+  try {
+    await db.collection("users").doc(btn.dataset.removeUser).delete();
+    noteUsers(`${btn.dataset.email} was removed. If they sign in again, they'll need your approval.`, "hint okc");
+    refreshPendingCount(); drawUsers();
+  } catch (err) {
+    btn.disabled = false;
+    msg.textContent = err && err.code === "permission-denied" ? "Couldn't remove. Make sure the latest database rules are published in Firebase." : "Couldn't remove that account. Please try again."; msg.className = "hint err";
+  }
+}
+content.addEventListener("click", e => { const b = e.target.closest("[data-remove-user]"); if (b) removeUser(b); });
 async function savePerms(uid){
   const list = [...content.querySelectorAll(`[data-perm-for="${CSS.escape(uid)}"]:checked`)].map(i => i.value);
   const msg = $("users-msg"); msg.textContent = "Saving…"; msg.className = "hint";
-  try { await db.collection("users").doc(uid).update({perms: list}); msg.textContent = "Access saved."; msg.className = "hint okc"; drawUsers(); }
+  try { await db.collection("users").doc(uid).update({perms: list}); noteUsers("Access saved.", "hint okc"); drawUsers(); }
   catch { msg.textContent = "That change didn't save."; msg.className = "hint err"; drawUsers(); }
 }
 async function refreshPendingCount(){
@@ -522,7 +552,7 @@ content.addEventListener("change", async e => {
   const msg = $("users-msg"); sel.disabled = true; msg.textContent = "Saving…"; msg.className = "hint";
   try {
     await db.collection("users").doc(sel.dataset.roleFor).update({role: sel.value});
-    msg.textContent = `Access updated to ${ROLE_LABEL[sel.value]}.`; msg.className = "hint okc"; refreshPendingCount(); drawUsers();
+    noteUsers(`Access updated to ${ROLE_LABEL[sel.value]}.`, "hint okc"); refreshPendingCount(); drawUsers();
   } catch { msg.textContent = "That change didn't save."; msg.className = "hint err"; drawUsers(); }
   finally { sel.disabled = false; }
 });

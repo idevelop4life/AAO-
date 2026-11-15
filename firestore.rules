@@ -69,7 +69,9 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
           && request.resource.data.name is string && request.resource.data.name.size() <= 80);
 
-      allow delete: if false;
+      // Super admins can remove other people's access records (never their own).
+      // Removed people go back to "waiting for approval" if they sign in again.
+      allow delete: if isSuper() && request.auth.uid != uid;
     }
 
     // Marks that the first super admin has been created.
