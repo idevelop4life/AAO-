@@ -72,6 +72,13 @@ input:focus,textarea:focus,select:focus{border-color:var(--gold);outline:none}
 .side .mark{padding:0 8px}
 .side nav{display:grid;gap:2px}
 .side .grp{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold-soft);padding:14px 10px 6px}
+.side .grp-btn{all:unset;box-sizing:border-box;display:flex;justify-content:space-between;align-items:center;width:100%;cursor:pointer;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold-soft);padding:14px 10px 6px}
+.side .grp-btn:hover{color:var(--gold)}
+.side .grp-btn:focus-visible{outline:1px solid var(--gold)}
+.side .grp-btn .caret{font-size:12px;transition:transform .15s}
+.side .grp-btn[aria-expanded="false"] .caret{transform:rotate(-90deg)}
+.grp-items{display:grid;gap:inherit}
+.grp-items[hidden]{display:none}
 .side button{background:none;border:0;color:var(--muted);text-align:left;padding:8px 10px;font:inherit;font-size:14.5px;border-radius:2px;cursor:pointer}
 .side button:hover{color:var(--text);background:var(--raise)}
 .side button[aria-current="page"]{color:var(--gold);background:var(--raise)}

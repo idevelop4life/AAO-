@@ -348,11 +348,20 @@ function drawNav(){
   const a = (can("replies") ? btn("replies", "Replies") : "") + (can("subscribers") ? btn("subscribers", "Subscribers") : "");
   const s = role === "super_admin" ? btn("users", `Users &amp; access <span id="pending-badge"></span>`) : "";
   const w = window.WS ? Object.entries(WS.tabs).filter(([k]) => can(k)).map(([k, l]) => btn(k, `${l} <span class="nav-badge" data-badge="${k}"></span>`)).join("") : "";
-  $("tabs").innerHTML = btn("account", "My overview") + (w ? `<span class="grp">Workspace</span>${w}` : "") + (c ? `<span class="grp">Website</span>${c}` : "") + (a ? `<span class="grp">Audience</span>${a}` : "") + (s ? `<span class="grp">Access</span>${s}` : "");
+  $("tabs").innerHTML = btn("account", "My overview") + group("Workspace", w) + group("Website", c) + group("Audience", a) + group("Access", s);
   if (window.WS) WS.badges();
+  function group(name, items){
+    if (!items) return "";
+    let shut = false; try { shut = localStorage.getItem("nav-shut-" + name) === "1"; } catch {}
+    if (items.includes('aria-current="page"')) shut = false;       /* never hide the page you're on */
+    return `<button type="button" class="grp grp-btn" data-grp="${name}" aria-expanded="${!shut}"><span>${name}</span><span class="caret" aria-hidden="true">▾</span></button><div class="grp-items"${shut ? " hidden" : ""}>${items}</div>`;
+  }
   function btn(k,l){ return `<button type="button" data-tab="${k}" ${k===tab?'aria-current="page"':""}>${l}</button>`; }
 }
 $("tabs").addEventListener("click", e => {
+  const g = e.target.closest("[data-grp]");
+  if (g) { const box = g.nextElementSibling, open = box.hidden; box.hidden = !open; g.setAttribute("aria-expanded", String(open));
+    try { localStorage.setItem("nav-shut-" + g.dataset.grp, open ? "0" : "1"); } catch {} return; }
   const b = e.target.closest("[data-tab]"); if (!b) return;
   tab = b.dataset.tab; usersNote = null; drawNav(); draw(); window.scrollTo(0,0); $("side").classList.remove("open");
 });
