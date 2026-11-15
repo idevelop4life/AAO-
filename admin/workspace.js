@@ -22,6 +22,8 @@ let taskFilter = "all", openChannel = null, calMonth = (d => new Date(d.getFullY
 
 /* ---------- helpers ---------- */
 const person = id => PEOPLE[id] || {name: "Someone", email: ""};
+/* How I appear in notifications: my display name, or my email if I haven't set one */
+const myLabel = () => A.myName || (PEOPLE[uid()] || {}).name || (A.me && A.me.email) || "A teammate";
 const pname = id => id === uid() ? "You" : (person(id).name || person(id).email || "Someone");
 function avatar(id, size = 32){
   const p = person(id), src = p.photo ? imgSrc(p.photo) : "";
@@ -159,7 +161,7 @@ function bell(){
 }
 function drawNotes(){
   $("notif-panel").innerHTML = `<div class="np-head"><strong>Notifications</strong>${NOTES.some(x => !x.read) ? `<button class="lnk" type="button" data-notes-all>Mark all read</button>` : ""}</div>
-    ${NOTES.length ? NOTES.map(x => `<button class="np-item${x.read ? "" : " unread"}" type="button" data-note="${esc(x.id)}">${avatar(x.from, 30)}<span><span>${esc(x.text)}</span><span class="hint">${esc(when(x.createdAt))}</span></span></button>`).join("")
+    ${NOTES.length ? NOTES.map(x => `<button class="np-item${x.read ? "" : " unread"}" type="button" data-note="${esc(x.id)}">${avatar(x.from, 30)}<span><span>${esc(x.from && /^Someone /.test(x.text || "") ? (person(x.from).name || person(x.from).email || "Someone") + x.text.slice(7) : x.text)}</span><span class="hint">${esc(when(x.createdAt))}</span></span></button>`).join("")
       : `<p class="hint" style="padding:16px">Nothing yet. You'll see new tasks, comments and events here.</p>`}`;
 }
 document.addEventListener("click", async e => {
@@ -268,11 +270,11 @@ async function saveTask(form){
     if (id) {
       const before = TASKS.find(x => x.id === id) || {};
       await db.collection("tasks").doc(id).update(data);
-      if (before.assignee !== data.assignee) notify(data.assignee, `${A.myName || "Someone"} assigned you "${data.title}"`, {tab: "ws_tasks", id});
-      else if (before.status !== data.status) { const label = STATUSES.find(s => s[0] === data.status)[1]; notify(before.reporter, `"${data.title}" moved to ${label}`, {tab: "ws_tasks", id}); notify(data.assignee, `"${data.title}" moved to ${label}`, {tab: "ws_tasks", id}); }
+      if (before.assignee !== data.assignee) notify(data.assignee, `${myLabel()} assigned you "${data.title}"`, {tab: "ws_tasks", id});
+      else if (before.status !== data.status) { const label = STATUSES.find(s => s[0] === data.status)[1]; notify(before.reporter, `${myLabel()} moved "${data.title}" to ${label}`, {tab: "ws_tasks", id}); notify(data.assignee, `${myLabel()} moved "${data.title}" to ${label}`, {tab: "ws_tasks", id}); }
     } else {
       const ref = await db.collection("tasks").add({...data, reporter: uid(), comments: 0, createdAt: TS()});
-      notify(data.assignee, `${A.myName || "Someone"} assigned you "${data.title}"`, {tab: "ws_tasks", id: ref.id});
+      notify(data.assignee, `${myLabel()} assigned you "${data.title}"`, {tab: "ws_tasks", id: ref.id});
     }
     closeModal(); msg(id ? "Task saved." : "Task created.");
   } catch { msg("That task didn't save. Check your access, or that the latest database rules are published.", true); }
@@ -282,7 +284,7 @@ async function moveTask(id, status){
   if (!canMove(t)) { msg("Only the person who created this task, or the person it's assigned to, can move it.", true); return; }
   try { await db.collection("tasks").doc(id).update({status, updatedAt: TS()});
     const label = STATUSES.find(s => s[0] === status)[1];
-    notify(t.reporter, `"${t.title}" moved to ${label}`, {tab: "ws_tasks", id}); notify(t.assignee, `"${t.title}" moved to ${label}`, {tab: "ws_tasks", id});
+    notify(t.reporter, `${myLabel()} moved "${t.title}" to ${label}`, {tab: "ws_tasks", id}); notify(t.assignee, `${myLabel()} moved "${t.title}" to ${label}`, {tab: "ws_tasks", id});
     return true;
   } catch { msg("That move didn't save. Make sure the latest database rules are published.", true); }
 }
@@ -358,7 +360,7 @@ async function saveGroup(editId){
   try {
     if (editId) await db.collection("channels").doc(editId).update({members: [...new Set([uid(), ...sel])], ...(name.trim() ? {name: name.trim().slice(0, 60)} : {})});
     else { const ref = await db.collection("channels").add({type: "group", name: name.trim().slice(0, 60), members: [uid(), ...sel], createdBy: uid(), createdAt: TS(), lastAt: TS(), lastMessage: "", lastFrom: ""});
-      sel.forEach(p => notify(p, `${A.myName || "Someone"} added you to the group "${name.trim()}"`, {tab: "ws_chat", channel: ref.id})); openChannel = ref.id; }
+      sel.forEach(p => notify(p, `${myLabel()} added you to the group "${name.trim()}"`, {tab: "ws_chat", channel: ref.id})); openChannel = ref.id; }
     closeModal(); A.goto("ws_chat", {channel: openChannel || editId});
   } catch { msg("The group didn't save. Only the person who created it (or a super admin) can change members.", true); }
 }
@@ -423,7 +425,7 @@ async function saveEvent(form){
     let evId = id;
     if (id) await db.collection("events").doc(id).update(data);
     else evId = (await db.collection("events").add({...data, createdBy: uid(), createdAt: TS()})).id;
-    data.attendees.forEach(p => notify(p, `${A.myName || "Someone"} ${id ? "updated" : "invited you to"} "${data.title}" on ${fmtDay(data.date)}`, {tab: "ws_calendar", event: evId}));
+    data.attendees.forEach(p => notify(p, `${myLabel()} ${id ? "updated" : "invited you to"} "${data.title}" on ${fmtDay(data.date)}`, {tab: "ws_calendar", event: evId}));
     closeModal();
     if (id) msg("Event saved.");
     else { msg("Event created. Add it to your Google Calendar so your phone reminds you."); if (EVENTS.find(e => e.id === evId)) openEvent(evId, true); else pendingEvent = evId; }
@@ -509,7 +511,7 @@ async function saveFolder(form){
       const b = db.batch(); b.update(db.collection("folders").doc(id), {name, open, members: mem});
       DOCS.filter(d => d.folderId === id).forEach(d => b.update(db.collection("docs").doc(d.id), {folder: name, open, viewers: mem}));
       await b.commit(); msg("Folder saved.");
-      mem.filter(p => !(folderById(id).members || []).includes(p)).forEach(p => notify(p, `${A.myName || "Someone"} shared the "${name}" folder with you`, {tab: "ws_docs"}));
+      mem.filter(p => !(folderById(id).members || []).includes(p)).forEach(p => notify(p, `${myLabel()} shared the "${name}" folder with you`, {tab: "ws_docs"}));
     }
     closeModal(); drawDocs();
   } catch { $("folder-msg").textContent = "That didn't save. Make sure the latest database rules are published."; form.querySelector("[type=submit]").disabled = false; }
@@ -592,7 +594,7 @@ document.addEventListener("submit", async e => {
     const t = TASKS.find(x => x.id === id) || {};
     try { await db.collection("tasks").doc(id).collection("comments").add({from: uid(), text, at: TS()}); ta.value = "";
       db.collection("tasks").doc(id).update({comments: (t.comments || 0) + 1, updatedAt: TS()}).catch(() => {});
-      [t.assignee, t.reporter].filter((v, i, a) => v && a.indexOf(v) === i).forEach(p => notify(p, `${A.myName || "Someone"} commented on "${t.title}"`, {tab: "ws_tasks", id}));
+      [t.assignee, t.reporter].filter((v, i, a) => v && a.indexOf(v) === i).forEach(p => notify(p, `${myLabel()} commented on "${t.title}"`, {tab: "ws_tasks", id}));
     } catch { msg("That comment didn't post.", true); }
   }
 });
