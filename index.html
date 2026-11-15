@@ -24,16 +24,18 @@
   --scrim:rgba(11,10,8,.7);
   --gold-hover:#e2c274;
   --on-gold:#0b0a08;
+  --gold-fill:#d4af5a;
   --display:"Bodoni Moda", "Didot", "Bodoni 72", Georgia, serif;
   --body:"Manrope", "Helvetica Neue", Arial, sans-serif;
   color-scheme: dark;
 }
 /* Light ("bright") mode, chosen with the switch in the top bar. */
 :root[data-theme="light"]{
-  --ink:#f7f3ea; --panel:#efe8da; --line:#ddd3bf; --gold:#86651c; --gold-soft:#9c7d3c;
-  --text:#1d1a14; --muted:#5f584a; --danger:#b03a28;
-  --bar:rgba(247,243,234,.9); --overlay:rgba(247,243,234,.96); --scrim:rgba(247,243,234,.8);
-  --gold-hover:#6e5316; --on-gold:#ffffff;
+  /* White and gold: deep gold for text (readable on white), bright gold for buttons and frames, soft gold hairlines. */
+  --ink:#ffffff; --panel:#fbf8f2; --line:#ece2cc; --gold:#94711f; --gold-soft:#c9a14a;
+  --text:#1d1a14; --muted:#6b6457; --danger:#b03a28;
+  --bar:rgba(255,255,255,.9); --overlay:rgba(255,255,255,.97); --scrim:rgba(255,255,255,.82);
+  --gold-fill:#c9a14a; --gold-hover:#b8903c; --on-gold:#1d1a14;
   color-scheme:light;
 }
 *{box-sizing:border-box}
@@ -202,7 +204,7 @@ form.signup legend{font-size:13px;letter-spacing:.12em;text-transform:uppercase;
 .freq input{position:absolute;opacity:0;pointer-events:none}
 .freq input:checked + label{border-color:var(--gold);background:rgba(212,175,90,.06)}
 .freq input:focus-visible + label{outline:2px solid var(--gold);outline-offset:2px}
-.btn{background:var(--gold);color:var(--on-gold);border:0;padding:14px 20px;font:inherit;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:13px;cursor:pointer;border-radius:2px;transition:background .2s}
+.btn{background:var(--gold-fill);color:var(--on-gold);border:0;padding:14px 20px;font:inherit;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:13px;cursor:pointer;border-radius:2px;transition:background .2s}
 .btn:hover{background:var(--gold-hover)}
 .btn:disabled{opacity:.6;cursor:default}
 .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
@@ -232,6 +234,19 @@ footer .socials a{padding:8px 12px}
 .theme-btn:hover{color:var(--gold);border-color:var(--gold)}
 .theme-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
 header.top .right{display:flex;align-items:center;gap:clamp(14px,2.4vw,28px)}
+/* light mode gold accents */
+:root[data-theme="light"] .kicker,:root[data-theme="light"] .facts dt,:root[data-theme="light"] .venture .st,:root[data-theme="light"] .quote .by,:root[data-theme="light"] .reader .meta{color:var(--gold)}
+:root[data-theme="light"] .portrait{border-color:var(--gold-soft)}
+:root[data-theme="light"] .post{border-top-color:var(--gold-soft)}
+:root[data-theme="light"] .quote{background:linear-gradient(180deg,#fbf6ea,#ffffff)}
+:root[data-theme="light"] .quote blockquote::before{color:var(--gold-soft)}
+:root[data-theme="light"] .interest h3::before{background:var(--gold-soft)}
+:root[data-theme="light"] .replies{border-left-color:var(--gold-soft)}
+:root[data-theme="light"] .socials a:hover,:root[data-theme="light"] .theme-btn:hover{border-color:var(--gold-soft)}
+:root[data-theme="light"] .freq input:checked + label{border-color:var(--gold-soft);background:#fbf6ea}
+:root[data-theme="light"] .gallery .play{border-color:var(--gold-soft)}
+:root[data-theme="light"] .gallery .play::after{border-left-color:var(--gold)}
+:root[data-theme="light"] .tag{border-color:var(--gold-soft)}
 </style>
 <script>try { if (localStorage.getItem("site-theme") === "light") document.documentElement.dataset.theme = "light"; } catch {}</script>
 </head>

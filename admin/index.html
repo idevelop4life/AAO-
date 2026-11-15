@@ -14,13 +14,13 @@
   --ink:#0b0a08; --panel:#141210; --raise:#1b1814; --line:#2c271d; --gold:#d4af5a; --gold-soft:#a88b4a;
   --text:#f2ece0; --muted:#a59d8e; --danger:#e07a6a; --ok:#8fc29a;
   --display:"Bodoni Moda","Didot",Georgia,serif; --body:"Manrope","Helvetica Neue",Arial,sans-serif;
-  color-scheme:dark; --gold-hover:#e2c274; --bar:rgba(11,10,8,.94); --on-gold:#0b0a08;
+  color-scheme:dark; --gold-hover:#e2c274; --bar:rgba(11,10,8,.94); --on-gold:#0b0a08; --gold-fill:#d4af5a;
 }
 /* Light ("bright") mode, chosen with the switch in the sidebar. */
 :root[data-theme="light"]{
-  --ink:#f7f3ea; --panel:#ffffff; --raise:#efe8da; --line:#e0d7c4; --gold:#8a6a1f; --gold-soft:#a98a49;
-  --text:#1d1a14; --muted:#655e50; --danger:#b03a28; --ok:#2c7442;
-  --gold-hover:#73581a; --bar:rgba(247,243,234,.95); --on-gold:#ffffff;
+  --ink:#ffffff; --panel:#fbf8f2; --raise:#f5eedf; --line:#ece2cc; --gold:#94711f; --gold-soft:#c9a14a;
+  --text:#1d1a14; --muted:#6b6457; --danger:#b03a28; --ok:#2c7442;
+  --gold-fill:#c9a14a; --gold-hover:#b8903c; --bar:rgba(255,255,255,.95); --on-gold:#1d1a14;
   color-scheme:light;
 }
 *{box-sizing:border-box}
@@ -33,7 +33,7 @@ h1,h2,h3{font-family:var(--display);font-weight:500;line-height:1.15;margin:0;te
 .mark{font-family:var(--display);color:var(--gold);letter-spacing:.08em;font-size:20px;text-decoration:none}
 
 /* buttons + fields */
-.btn{background:var(--gold);color:var(--on-gold);border:0;padding:12px 18px;font:inherit;font-weight:700;letter-spacing:.1em;text-transform:uppercase;font-size:12px;cursor:pointer;border-radius:2px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn{background:var(--gold-fill);color:var(--on-gold);border:0;padding:12px 18px;font:inherit;font-weight:700;letter-spacing:.1em;text-transform:uppercase;font-size:12px;cursor:pointer;border-radius:2px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px}
 .btn:hover{background:var(--gold-hover)}
 .btn:disabled{opacity:.55;cursor:default}
 .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
@@ -124,9 +124,15 @@ input:focus,textarea:focus,select:focus{border-color:var(--gold);outline:none}
 .vid-row video{width:160px;max-height:100px;background:#000;border:1px solid var(--line)}
 .progress{height:4px;background:var(--line);border-radius:2px;overflow:hidden;width:100%}
 .progress > i{display:block;height:100%;background:var(--gold);width:0}
+input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
 .theme-btn{display:inline-flex;align-items:center;gap:8px;background:none;border:1px solid var(--line);color:var(--text);padding:7px 12px;font:inherit;font-size:12px;letter-spacing:.08em;text-transform:uppercase;border-radius:2px;cursor:pointer;justify-self:start}
 .theme-btn:hover{border-color:var(--gold);color:var(--gold)}
 .auth .theme-btn{position:fixed;top:16px;right:16px}
+:root[data-theme="light"] .side .grp,:root[data-theme="light"] .perm-box legend{color:var(--gold)}
+:root[data-theme="light"] .notice{border-left-color:var(--gold-soft)}
+:root[data-theme="light"] .chip{border-color:var(--gold-soft)}
+:root[data-theme="light"] .add{border-color:var(--gold-soft)}
+:root[data-theme="light"] .progress > i{background:var(--gold-soft)}
 </style>
 <script>try { if (localStorage.getItem("admin-theme") === "light") document.documentElement.dataset.theme = "light"; } catch {}</script>
 </head>
