@@ -149,6 +149,102 @@ input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
 :root[data-theme="light"] .chip{border-color:var(--gold-soft)}
 :root[data-theme="light"] .add{border-color:var(--gold-soft)}
 :root[data-theme="light"] .progress > i{background:var(--gold-soft)}
+
+/* ---------- workspace ---------- */
+.avatar{border-radius:50%;object-fit:cover;flex:none;border:1px solid var(--gold-soft);background:var(--panel)}
+.avatar.ini{display:inline-flex;align-items:center;justify-content:center;background:var(--raise);color:var(--gold);font-weight:700;letter-spacing:.02em}
+.avatar.grp{font-family:var(--display)}
+.nav-badge .chip{margin-left:6px;padding:0 6px}
+.bell-wrap{position:relative}
+.bell{position:relative;background:none;border:1px solid var(--line);color:var(--text);width:40px;height:40px;border-radius:50%;cursor:pointer;display:grid;place-items:center}
+.bell:hover{border-color:var(--gold);color:var(--gold)}
+.bell svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#bell-count{position:absolute;top:-4px;right:-4px;min-width:18px;height:18px;border-radius:9px;background:var(--gold-fill);color:var(--on-gold);font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 4px}
+.notif-panel{position:absolute;right:0;top:48px;width:min(380px,92vw);max-height:70vh;overflow:auto;background:var(--panel);border:1px solid var(--gold-soft);z-index:30;box-shadow:0 20px 50px rgba(0,0,0,.5)}
+.np-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
+.np-item{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:12px 14px;color:var(--text);font:inherit;cursor:pointer}
+.np-item > span{display:grid;gap:2px;font-size:14px}
+.np-item.unread{background:var(--raise)}
+.np-item:hover{background:var(--raise)}
+.lnk{background:none;border:0;color:var(--gold);font:inherit;font-size:13px;cursor:pointer;padding:0}
+.ws-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.ws-bar select{width:auto}
+.content:has(.board),.content:has(.chat),.content:has(.cal){max-width:none}
+.board{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:14px;overflow-x:auto;padding-bottom:8px}
+.col{background:var(--panel);border:1px solid var(--line);padding:12px;display:flex;flex-direction:column;gap:10px;min-height:280px}
+.col.over{border-color:var(--gold)}
+.col h3{font-family:var(--body);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);font-weight:700}
+.card{display:grid;gap:8px;text-align:left;background:var(--ink);border:1px solid var(--line);padding:12px;color:var(--text);font:inherit;cursor:pointer;border-radius:2px}
+.card:hover{border-color:var(--gold-soft)}
+.card.dragging{opacity:.5}
+.card-top{display:flex;justify-content:space-between;align-items:center}
+.card-title{font-weight:600;line-height:1.35}
+.card-foot{display:flex;gap:8px;align-items:center;font-size:12.5px}
+.tchip{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;border:1px solid var(--gold-soft);color:var(--gold);padding:1px 7px;border-radius:2px;font-weight:700}
+.prio{width:10px;height:10px;border-radius:50%}
+.p-high{background:#d9534f}.p-med{background:var(--gold-fill)}.p-low{background:#6b8f71}
+.empty-col{margin:0}
+.ws-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:grid;place-items:start center;overflow:auto;padding:5vh 12px}
+.ws-dialog{position:relative;width:min(560px,100%);background:var(--panel);border:1px solid var(--gold-soft);padding:24px;display:grid;gap:14px}
+.ws-dialog.wide{width:min(760px,100%)}
+.ws-dialog .x{position:absolute;top:10px;right:10px;background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer}
+.ws-form{display:grid;gap:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:560px){.grid2{grid-template-columns:1fr}}
+.comments{display:grid;gap:10px;max-height:320px;overflow:auto}
+.comment{display:flex;gap:10px}.comment p{margin:2px 0 0;white-space:pre-wrap}
+.comment-form{display:grid;gap:8px}.comment-form textarea{min-height:70px}
+.chat{display:grid;grid-template-columns:300px 1fr;border:1px solid var(--line);height:calc(100vh - 190px);min-height:440px;background:var(--panel)}
+.chat-list{border-right:1px solid var(--line);overflow:auto}
+.chat-item{display:flex;gap:10px;align-items:center;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:12px;color:var(--text);font:inherit;cursor:pointer}
+.chat-item.active,.chat-item:hover{background:var(--raise)}
+.chat-item.unread strong{color:var(--gold)}
+.ci-text{display:grid;min-width:0;flex:1}.ci-text .hint{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--gold-fill);flex:none}
+.chat-thread{display:flex;flex-direction:column;min-width:0;min-height:0}
+.th-head{display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line)}
+.th-back{display:none}
+.msgs{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:6px;background:var(--ink)}
+.msg{display:flex;gap:8px;align-items:flex-end;max-width:80%}
+.msg.mine{align-self:flex-end;flex-direction:row-reverse}
+.bubble{background:var(--panel);border:1px solid var(--line);padding:8px 12px;border-radius:14px 14px 14px 4px;line-height:1.45;overflow-wrap:anywhere}
+.msg.mine .bubble{background:var(--gold-fill);color:var(--on-gold);border-color:transparent;border-radius:14px 14px 4px 14px}
+.bubble .who{display:block;font-size:12px;font-weight:700;color:var(--gold);margin-bottom:2px}
+.bubble .t{display:block;font-size:11px;opacity:.65;margin-top:3px}
+.send{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)}
+.send textarea{min-height:44px;max-height:140px;resize:none}
+@media (max-width:820px){
+  .chat{grid-template-columns:1fr;height:calc(100vh - 160px)}
+  .chat .chat-thread{display:none}.chat.has-open .chat-list{display:none}.chat.has-open .chat-thread{display:flex}
+  .th-back{display:inline-flex}
+  .msg{max-width:92%}
+}
+.people-pick{display:grid;gap:6px;max-height:50vh;overflow:auto}
+.pp{display:flex;gap:10px;align-items:center;padding:8px;border:1px solid var(--line);cursor:pointer}
+.pp > span{display:grid;flex:1}
+.cal-title{font-family:var(--display);font-size:22px;font-weight:500;min-width:190px;text-align:center}
+.cal{border:1px solid var(--line);background:var(--panel)}
+.cal-dow,.cal-grid{display:grid;grid-template-columns:repeat(7,1fr)}
+.cal-dow span{padding:8px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);text-align:center;border-bottom:1px solid var(--line)}
+.cell{min-height:104px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px;display:flex;flex-direction:column;gap:3px;cursor:pointer;min-width:0}
+.cell:nth-child(7n){border-right:0}
+.cell.empty{background:var(--ink);cursor:default}
+.cell.today .dn{background:var(--gold-fill);color:var(--on-gold);border-radius:50%;width:24px;height:24px;display:grid;place-items:center}
+.dn{font-size:13px;color:var(--muted)}
+.ev{display:block;text-align:left;background:var(--raise);border:0;border-left:3px solid var(--gold-fill);color:var(--text);font:inherit;font-size:12px;padding:2px 6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ev.due{border-left-color:#d9534f}
+@media (max-width:700px){.cell{min-height:58px;padding:3px}.ev{font-size:0;height:6px;padding:0}.cal-title{font-size:18px;min-width:0}}
+.agenda{display:grid;gap:6px}
+.ag{display:flex;gap:14px;text-align:left;background:var(--panel);border:1px solid var(--line);padding:10px 12px;color:var(--text);font:inherit;cursor:pointer}
+.ag:hover{border-color:var(--gold-soft)}
+.ag-d{min-width:64px;color:var(--gold);font-weight:700;font-variant-numeric:tabular-nums}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.fchip{background:none;border:1px solid var(--line);color:var(--muted);padding:6px 12px;border-radius:999px;font:inherit;font-size:13px;cursor:pointer}
+.fchip.on{border-color:var(--gold);color:var(--gold)}
+.who-cell{display:inline-flex;gap:6px;align-items:center}
+.team{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.tm{background:var(--panel);border:1px solid var(--line);padding:20px;display:grid;justify-items:center;text-align:center;gap:6px}
+.tm-cat{color:var(--gold);font-weight:700;font-size:13px;letter-spacing:.06em}
 </style>
 <script>try { if (localStorage.getItem("admin-theme") === "light") document.documentElement.dataset.theme = "light"; } catch {}</script>
 </head>
@@ -207,7 +303,9 @@ input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
     </div>
   </aside>
   <div class="mainp">
-    <div class="top"><div style="display:flex;align-items:center;gap:12px"><button class="btn ghost sm menu-btn" type="button" id="menu-btn" aria-label="Open menu">Menu</button><h2 id="tab-title"></h2></div></div>
+    <div class="top"><div style="display:flex;align-items:center;gap:12px"><button class="btn ghost sm menu-btn" type="button" id="menu-btn" aria-label="Open menu">Menu</button><h2 id="tab-title"></h2></div>
+      <div class="bell-wrap"><button class="bell" type="button" id="bell" aria-label="Notifications" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16v-5a6 6 0 0 0-12 0v5l-2 2h16l-2-2Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span id="bell-count" hidden></span></button>
+      <div class="notif-panel" id="notif-panel" hidden></div></div></div>
     <div class="content" id="content"></div>
     <div class="savebar" id="savebar">
       <p class="status" id="status" role="status" aria-live="polite">All changes saved.</p>
@@ -223,5 +321,6 @@ input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="/admin/admin.js"></script>
+<script src="/admin/workspace.js"></script>
 </body>
 </html>

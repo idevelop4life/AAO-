@@ -20,5 +20,19 @@ service firebase.storage {
         && request.resource.contentType.matches('video/.*|image/.*');
       allow delete: if isStaff();
     }
+
+    // Workspace documents: only people with Documents access (or super admins).
+    function wsDocs() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'super_admin'
+            || (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'
+                && 'ws_docs' in firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('perms', [])));
+    }
+    match /workspace/{allPaths=**} {
+      allow read: if wsDocs();
+      allow create: if wsDocs() && request.resource.size < 50 * 1024 * 1024;
+      allow delete: if wsDocs();
+    }
   }
 }

@@ -31,12 +31,16 @@ const ROLE_LABEL = {super_admin: "Super admin", admin: "Admin", pending: "No acc
 const toDate = t => t && t.toDate ? t.toDate() : (t ? new Date(t) : null);
 const fmtWhen = t => { const d = toDate(t); return !d || isNaN(d) ? "" : d.toLocaleString("en-US", {month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit"}); };
 
+let myPhoto = "", myTitle = "";
 let me = null, role = null, perms = [], myName = "", SAVED = null, S = null, dirty = false, tab = "profile", saving = false;
 const storage = (CFG.storageBucket && firebase.storage) ? firebase.storage() : null;
 
 /* Sections a super admin can grant to an admin. Content keys match the website data. */
 const PERM_LABELS = [["profile","Profile"],["socials","Social links"],["about","About"],["building","Building"],["interests","Interests"],["gallery","Gallery"],["thoughts","Thoughts"],["quote","Quotes"],["journal","Journal"],["subscribe","Subscribe"],["sections","Show / hide"],["replies","Replies"],["subscribers","Subscribers"]];
-const can = k => role === "super_admin" || perms.includes(k);
+const WS_PERMS = [["ws_tasks","Tasks"],["ws_assign","Assign tasks to others"],["ws_chat","Chat"],["ws_calendar","Calendar"],["ws_docs","Documents"]];
+const ALL_PERMS = [...PERM_LABELS, ...WS_PERMS];
+const can = k => role === "super_admin" || (k === "ws_team" ? perms.some(p => p.startsWith("ws_")) : perms.includes(k));
+const CATEGORIES = ["Content Writer","Video Editor","Graphic Designer","Social Media Manager","Photographer","Developer","Marketing","Operations","Assistant"];
 
 /* ---------------- auth ---------------- */
 let mode = "signin";
@@ -125,7 +129,7 @@ async function boot(user){
   let prof;
   try { prof = await ensureProfile(user); }
   catch { authMsg("Couldn't load your account. Make sure the Firestore rules have been published.", "hint err"); show("v-auth"); return; }
-  role = prof.role; perms = Array.isArray(prof.perms) ? prof.perms : []; myName = prof.name || "";
+  role = prof.role; perms = Array.isArray(prof.perms) ? prof.perms : []; myName = prof.name || ""; myPhoto = prof.photo || ""; myTitle = prof.title || "";
   if (role !== "admin" && role !== "super_admin") { $("pending-email").textContent = user.email; show("v-pending"); return; }
   let snap, data;
   try { snap = await db.doc("site/content").get(); data = snap.exists ? snap.data().data : await seedContent(); }
@@ -136,12 +140,22 @@ async function boot(user){
   await loadMedia(data);
   SAVED = data; S = structuredClone(SAVED); dirty = false;
   if (!can(tab) && tab in CONTENT_TABS) tab = (PERM_LABELS.find(([k]) => can(k) && k in CONTENT_TABS) || [ "account" ])[0];
+  if (window.WS) WS.start();
   drawNav(); draw();
   const when = snap && snap.exists ? snap.data().updatedAt : null;
   setStatus(when ? `Last published ${fmtWhen(when)}.` : "All changes saved.");
   if (role === "super_admin") refreshPendingCount();
 }
-auth.onAuthStateChanged(user => boot(user));
+/* Doorway for workspace.js */
+window.__ADMIN = {
+  db, auth, storage, TS, esc, imgSrc, MEDIA, loadMedia, compress, fmtWhen, toDate, ROLE_LABEL, CATEGORIES,
+  setStatus: (t, c) => setStatus(t, c),
+  get me() { return me; }, get role() { return role; }, get perms() { return perms; }, get myName() { return myName; },
+  can: k => can(k),
+  goto: (t, open) => { tab = t; window.__WS_OPEN = open || null; drawNav(); draw(); window.scrollTo(0, 0); },
+  redrawNav: () => drawNav()
+};
+auth.onAuthStateChanged(user => { if (!user && window.WS) WS.stop(); boot(user); });
 
 /* ---------------- editor helpers ---------------- */
 const get = path => path.reduce((o,k) => o?.[k], S);
@@ -333,7 +347,9 @@ function drawNav(){
   const c = Object.entries(CONTENT_TABS).filter(([k]) => can(k)).map(([k,[l]]) => btn(k,l)).join("");
   const a = (can("replies") ? btn("replies", "Replies") : "") + (can("subscribers") ? btn("subscribers", "Subscribers") : "");
   const s = (role === "super_admin" ? btn("users", `Users &amp; access <span id="pending-badge"></span>`) : "") + btn("account", "My account");
-  $("tabs").innerHTML = (c ? `<span class="grp">Website</span>${c}` : "") + (a ? `<span class="grp">Audience</span>${a}` : "") + `<span class="grp">Access</span>${s}`;
+  const w = window.WS ? Object.entries(WS.tabs).filter(([k]) => can(k)).map(([k, l]) => btn(k, `${l} <span class="nav-badge" data-badge="${k}"></span>`)).join("") : "";
+  $("tabs").innerHTML = (w ? `<span class="grp">Workspace</span>${w}` : "") + (c ? `<span class="grp">Website</span>${c}` : "") + (a ? `<span class="grp">Audience</span>${a}` : "") + `<span class="grp">Access</span>${s}`;
+  if (window.WS) WS.badges();
   function btn(k,l){ return `<button type="button" data-tab="${k}" ${k===tab?'aria-current="page"':""}>${l}</button>`; }
 }
 $("tabs").addEventListener("click", e => {
@@ -343,7 +359,9 @@ $("tabs").addEventListener("click", e => {
 $("menu-btn").addEventListener("click", () => $("side").classList.toggle("open"));
 
 function draw(){
+  if (window.WS) WS.leave();
   if (tab !== "account" && tab !== "users" && !can(tab)) tab = "account";
+  if (window.WS && WS.tabs[tab]) { $("savebar").hidden = true; $("tab-title").textContent = WS.tabs[tab]; WS.draw(tab); return; }
   if (tab === "users" && role !== "super_admin") tab = "account";
   const isContent = tab in CONTENT_TABS;
   $("savebar").hidden = !isContent;
@@ -584,19 +602,36 @@ async function drawUsers(){
       const self = u.id === me.uid, up = Array.isArray(u.perms) ? u.perms : [];
       return `<div class="item user-card">
         <div class="user-top">
-          <div style="min-width:0"><strong>${esc(u.name || u.email)}</strong>${self ? ` <span class="chip muted">You</span>` : ""}
-            ${u.name ? `<div class="hint">${esc(u.email)}</div>` : ""}<div class="hint">Joined ${esc(fmtWhen(u.createdAt))}</div></div>
+          <div style="display:flex;gap:12px;align-items:center;min-width:0">${avatarHTML(u, 48)}<div style="min-width:0"><strong>${esc(u.name || u.email)}</strong>${self ? ` <span class="chip muted">You</span>` : ""}
+            ${u.name ? `<div class="hint">${esc(u.email)}</div>` : ""}<div class="hint">Joined ${esc(fmtWhen(u.createdAt))}</div></div></div>
           ${self ? `<span class="chip">${ROLE_LABEL[u.role]}</span>`
             : `<label class="f" style="min-width:170px"><span>Role</span><select data-role-for="${esc(u.id)}">${["pending","admin","super_admin"].map(r => `<option value="${r}" ${u.role===r?"selected":""}>${ROLE_LABEL[r]}</option>`).join("")}</select></label>`}
         </div>
-        ${u.role === "admin" ? `<fieldset class="perm-box"><legend>Can edit <span class="hint">(${up.length} of ${PERM_LABELS.length})</span></legend>
+        ${u.role !== "pending" ? `<label class="f" style="max-width:320px"><span>Category</span><input type="text" list="cat-list" value="${esc(u.title || "")}" placeholder="e.g. Content Writer" data-title-for="${esc(u.id)}"></label>` : ""}
+        ${u.role === "admin" ? `<fieldset class="perm-box"><legend>Can use <span class="hint">(${up.length} of ${ALL_PERMS.length})</span></legend>
+          <p class="hint" style="margin:0"><b>Workspace</b></p>
+          <div class="perm-grid">${WS_PERMS.map(([k,l]) => `<label class="f check"><input type="checkbox" data-perm-for="${esc(u.id)}" value="${k}" ${up.includes(k) ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
+          <p class="hint" style="margin:0"><b>Website</b></p>
           <div class="perm-grid">${PERM_LABELS.map(([k,l]) => `<label class="f check"><input type="checkbox" data-perm-for="${esc(u.id)}" value="${k}" ${up.includes(k) ? "checked" : ""}><span>${l}</span></label>`).join("")}</div>
           <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" type="button" data-perm-all="${esc(u.id)}">Tick all</button><button class="btn ghost sm" type="button" data-perm-none="${esc(u.id)}">Untick all</button></div>
-          ${up.length ? "" : `<p class="hint" style="color:var(--gold)">This admin can't edit anything yet. Tick the sections they should manage.</p>`}
+          ${up.length ? "" : `<p class="hint" style="color:var(--gold)">This admin can't use anything yet. Tick what they should have.</p>`}
         </fieldset>` : u.role === "super_admin" && !self ? `<p class="hint">Super admins can edit everything.</p>` : ""}
         ${self ? "" : `<div><button class="btn danger sm" type="button" data-remove-user="${esc(u.id)}" data-email="${esc(u.email)}">Remove account</button></div>`}
-      </div>`; }).join("")}`;
+      </div>`; }).join("")}
+    <datalist id="cat-list">${CATEGORIES.map(c => `<option value="${esc(c)}">`).join("")}</datalist>`;
+  loadMedia(users).then(() => content.querySelectorAll("img[data-avatar-src]").forEach(i => { const s = imgSrc(i.dataset.avatarSrc); if (s) i.src = s; }));
 }
+function avatarHTML(u, size){
+  const initials = String(u.name || u.email || "?").split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
+  const src = u.photo ? imgSrc(u.photo) : "";
+  return u.photo ? `<img class="avatar" style="width:${size}px;height:${size}px" src="${esc(src)}" data-avatar-src="${esc(u.photo)}" alt="">`
+    : `<span class="avatar ini" style="width:${size}px;height:${size}px;font-size:${Math.round(size * .38)}px">${esc(initials)}</span>`;
+}
+content.addEventListener("change", async e => {
+  const inp = e.target.closest("[data-title-for]"); if (!inp) return;
+  try { await db.collection("users").doc(inp.dataset.titleFor).update({title: inp.value.trim().slice(0, 60)}); noteUsers("Category saved.", "hint okc"); const m = $("users-msg"); if (m) { m.textContent = "Category saved."; m.className = "hint okc"; } }
+  catch { const m = $("users-msg"); if (m) { m.textContent = "That category didn't save."; m.className = "hint err"; } }
+});
 async function removeUser(btn){
   if (!btn.dataset.confirm) { btn.dataset.confirm = "1"; btn.textContent = `Click again to remove ${btn.dataset.email}`; return; }
   const msg = $("users-msg"); btn.disabled = true; msg.textContent = "Removing…"; msg.className = "hint";
@@ -624,10 +659,13 @@ async function refreshPendingCount(){
 }
 /* ---------------- account ---------------- */
 function drawAccount(){
+  setTimeout(() => { const s = $("me-avatar"); if (s) { s.innerHTML = avatarHTML({name: myName, email: me.email, photo: myPhoto}, 64); loadMedia({p: myPhoto}).then(() => { const i = s.querySelector("img"); if (i) i.src = imgSrc(myPhoto); }); } }, 0);
   content.innerHTML = `
     <form id="name-form" style="display:grid;gap:14px;max-width:420px" novalidate>
       <h3 class="group-title" style="margin-top:0">Your profile</h3>
-      <p class="hint">${esc(me.email)} · ${ROLE_LABEL[role]}</p>
+      <div style="display:flex;gap:14px;align-items:center"><span id="me-avatar"></span>
+        <div style="display:grid;gap:6px"><label class="btn ghost sm" style="cursor:pointer;justify-self:start">Upload profile photo<input type="file" accept="image/*" id="me-photo" hidden></label>
+        <span class="hint" id="photo-msg">${esc(me.email)} · ${ROLE_LABEL[role]}${myTitle ? " · " + esc(myTitle) : ""}</span></div></div>
       <label class="f" for="me-name"><span>Display name</span><input type="text" id="me-name" maxlength="80" value="${esc(myName)}" placeholder="e.g. Angela" autocomplete="name"></label>
       <button class="btn" type="submit" style="justify-self:start">Save profile</button>
       <p class="hint" id="name-msg" role="status" aria-live="polite"></p>
@@ -664,6 +702,17 @@ content.addEventListener("click", e => {
   const uid = (all || none) && (all ? all.dataset.permAll : none.dataset.permNone); if (!uid) return;
   content.querySelectorAll(`[data-perm-for="${CSS.escape(uid)}"]`).forEach(i => i.checked = !!all);
   savePerms(uid);
+});
+content.addEventListener("change", async e => {
+  if (e.target.id !== "me-photo" || !e.target.files[0]) return;
+  const msg = $("photo-msg"); msg.textContent = "Uploading photo…";
+  try {
+    const data = await compress(e.target.files[0]);
+    const ref = await db.collection("media").add({data, name: "profile-photo", createdAt: TS()});
+    MEDIA[ref.id] = data; myPhoto = "media:" + ref.id;
+    await db.collection("users").doc(me.uid).update({photo: myPhoto});
+    msg.textContent = "Profile photo saved."; drawAccount();
+  } catch { msg.textContent = "The photo didn't save. Make sure the latest database rules are published."; }
 });
 content.addEventListener("submit", async e => {
   if (e.target.id !== "name-form") return;

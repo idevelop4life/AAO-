@@ -19,6 +19,8 @@ service cloud.firestore {
     function isSuper() { return signedIn() && exists(userDoc(request.auth.uid)) && myRole() == 'super_admin'; }
     function myPerms() { return get(userDoc(request.auth.uid)).data.get('perms', []); }
     function canDo(section) { return isSuper() || (isStaff() && section in myPerms()); }
+    function canAssign() { return isSuper() || (isStaff() && 'ws_assign' in myPerms()); }
+    function isSuperUser(id) { return exists(userDoc(id)) && get(userDoc(id)).data.role == 'super_admin'; }
     function bootstrapPath() { return /databases/$(database)/documents/meta/bootstrap; }
 
     // Website content: everyone reads. Super admins edit everything;
@@ -45,7 +47,7 @@ service cloud.firestore {
 
     // People with admin accounts.
     match /users/{uid} {
-      allow read: if signedIn() && (request.auth.uid == uid || isSuper());
+      allow read: if signedIn() && (request.auth.uid == uid || isStaff());
 
       // You can only create your own record, and only as pending,
       // except the very first account, which becomes super admin.
@@ -62,12 +64,14 @@ service cloud.firestore {
       // Super admins change other people's role and section access (never their own role,
       // so one always remains). Everyone can update their own display name.
       allow update: if (isSuper() && request.auth.uid != uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'perms'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role', 'perms', 'title', 'photo'])
           && request.resource.data.role in ['pending', 'admin', 'super_admin']
           && request.resource.data.get('perms', []) is list)
         || (signedIn() && request.auth.uid == uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
-          && request.resource.data.name is string && request.resource.data.name.size() <= 80);
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo'])
+          && request.resource.data.get('name', '') is string && request.resource.data.get('name', '').size() <= 80)
+        || (isSuper() && request.auth.uid == uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo', 'title']));
 
       // Super admins can remove other people's access records (never their own).
       // Removed people go back to "waiting for approval" if they sign in again.
@@ -103,6 +107,81 @@ service cloud.firestore {
         && request.resource.data.frequency in ['daily', 'weekly']
         && request.resource.data.createdAt == request.time;
       allow read, delete: if canDo('subscribers');
+    }
+
+    // ================= Workspace =================
+
+    // Notifications: anyone on the team can notify a teammate; you read and clear only your own.
+    match /notifications/{owner}/items/{id} {
+      allow read, update, delete: if signedIn() && request.auth.uid == owner;
+      allow create: if isStaff() && request.resource.data.from == request.auth.uid
+        && request.resource.data.keys().hasOnly(['text', 'link', 'from', 'read', 'createdAt'])
+        && request.resource.data.text is string && request.resource.data.text.size() <= 300;
+    }
+
+    // Tasks: everyone with Tasks access sees the board. You can always assign to yourself or to a
+    // super admin; assigning to anyone else needs "Assign tasks to others".
+    match /tasks/{id} {
+      allow read: if canDo('ws_tasks');
+      allow create: if canDo('ws_tasks')
+        && request.resource.data.reporter == request.auth.uid
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200
+        && (request.resource.data.assignee == request.auth.uid || canAssign() || isSuperUser(request.resource.data.assignee));
+      allow update: if canDo('ws_tasks')
+        && (resource.data.reporter == request.auth.uid || resource.data.assignee == request.auth.uid || canAssign())
+        && request.resource.data.reporter == resource.data.reporter
+        && (request.resource.data.assignee == resource.data.assignee || request.resource.data.assignee == request.auth.uid
+            || canAssign() || isSuperUser(request.resource.data.assignee));
+      allow delete: if isSuper() || (canDo('ws_tasks') && resource.data.reporter == request.auth.uid);
+
+      match /comments/{cid} {
+        allow read: if canDo('ws_tasks');
+        allow create: if canDo('ws_tasks') && request.resource.data.from == request.auth.uid
+          && request.resource.data.text is string && request.resource.data.text.size() <= 2000;
+        allow delete: if isSuper() || resource.data.from == request.auth.uid;
+      }
+    }
+
+    // Chat: only the people in a conversation can read it or post in it.
+    match /channels/{cid} {
+      allow read: if signedIn() && (resource == null || request.auth.uid in resource.data.members);
+      allow create: if canDo('ws_chat') && request.auth.uid in request.resource.data.members
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.members.size() >= 2 && request.resource.data.members.size() <= 50
+        && (request.resource.data.type == 'group' || (request.resource.data.type == 'dm' && request.resource.data.members.size() == 2));
+      allow update: if signedIn() && request.auth.uid in resource.data.members && (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage', 'lastAt', 'lastFrom', 'reads'])
+        || (resource.data.type == 'group' && (resource.data.createdBy == request.auth.uid || isSuper())
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'members']))
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+            && request.resource.data.members.toSet() == resource.data.members.toSet().difference([request.auth.uid].toSet()))
+      );
+      allow delete: if isSuper();
+
+      match /messages/{mid} {
+        allow read: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/channels/$(cid)).data.members;
+        allow create: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/channels/$(cid)).data.members
+          && request.resource.data.from == request.auth.uid
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 4000;
+        allow delete: if signedIn() && (resource.data.from == request.auth.uid || isSuper());
+      }
+    }
+
+    // Calendar
+    match /events/{id} {
+      allow read: if canDo('ws_calendar');
+      allow create: if canDo('ws_calendar') && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.title is string && request.resource.data.title.size() <= 160;
+      allow update: if canDo('ws_calendar') && (resource.data.createdBy == request.auth.uid || isSuper())
+        && request.resource.data.createdBy == resource.data.createdBy;
+      allow delete: if isSuper() || (canDo('ws_calendar') && resource.data.createdBy == request.auth.uid);
+    }
+
+    // Shared documents (the files themselves live in Storage under workspace/)
+    match /docs/{id} {
+      allow read: if canDo('ws_docs');
+      allow create: if canDo('ws_docs') && request.resource.data.uploadedBy == request.auth.uid;
+      allow delete: if isSuper() || (canDo('ws_docs') && resource.data.uploadedBy == request.auth.uid);
     }
   }
 }
