@@ -32,11 +32,11 @@ const toDate = t => t && t.toDate ? t.toDate() : (t ? new Date(t) : null);
 const fmtWhen = t => { const d = toDate(t); return !d || isNaN(d) ? "" : d.toLocaleString("en-US", {month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit"}); };
 
 let myPhoto = "", myTitle = "";
-let me = null, role = null, perms = [], myName = "", SAVED = null, S = null, dirty = false, tab = "profile", saving = false;
+let me = null, role = null, perms = [], myName = "", SAVED = null, S = null, dirty = false, tab = "account", saving = false;
 const storage = (CFG.storageBucket && firebase.storage) ? firebase.storage() : null;
 
 /* Sections a super admin can grant to an admin. Content keys match the website data. */
-const PERM_LABELS = [["profile","Profile"],["socials","Social links"],["about","About"],["building","Building"],["interests","Interests"],["gallery","Gallery"],["thoughts","Thoughts"],["quote","Quotes"],["journal","Journal"],["subscribe","Subscribe"],["sections","Show / hide"],["replies","Replies"],["subscribers","Subscribers"]];
+const PERM_LABELS = [["profile","Homepage intro"],["socials","Social links"],["about","About"],["building","Building"],["interests","Interests"],["gallery","Gallery"],["thoughts","Thoughts"],["quote","Quotes"],["journal","Journal"],["subscribe","Subscribe"],["sections","Show / hide"],["replies","Replies"],["subscribers","Subscribers"]];
 const WS_PERMS = [["ws_tasks","Tasks"],["ws_assign","Assign tasks to others"],["ws_chat","Chat"],["ws_calendar","Calendar"],["ws_docs","Documents"]];
 const ALL_PERMS = [...PERM_LABELS, ...WS_PERMS];
 const can = k => role === "super_admin" || (k === "ws_team" ? perms.some(p => p.startsWith("ws_")) : perms.includes(k));
@@ -139,7 +139,7 @@ async function boot(user){
   if (!data) { $("savebar").hidden = true; $("content").innerHTML = `<div class="notice">The website content couldn't be loaded. Check that Firestore is set up and the rules are published, then reload.</div>`; return; }
   await loadMedia(data);
   SAVED = data; S = structuredClone(SAVED); dirty = false;
-  if (!can(tab) && tab in CONTENT_TABS) tab = (PERM_LABELS.find(([k]) => can(k) && k in CONTENT_TABS) || [ "account" ])[0];
+  tab = "account";                      /* everyone starts on their own profile */
   if (window.WS) WS.start();
   drawNav(); draw();
   const when = snap && snap.exists ? snap.data().updatedAt : null;
@@ -249,7 +249,7 @@ const today = () => new Date().toISOString().slice(0,10);
 
 /* ---------------- tabs ---------------- */
 const CONTENT_TABS = {
-  profile: ["Profile", () => `
+  profile: ["Homepage intro", () => `
     ${fText("Name", ["profile","name"])}
     <p class="hint">Wrap a word in *asterisks* to make it gold, like Angela Agunwami *Onwuka*. Works in project names too.</p>
     ${fText("Small line above your name", ["profile","kicker"])}
@@ -346,9 +346,9 @@ const OTHER_TABS = {
 function drawNav(){
   const c = Object.entries(CONTENT_TABS).filter(([k]) => can(k)).map(([k,[l]]) => btn(k,l)).join("");
   const a = (can("replies") ? btn("replies", "Replies") : "") + (can("subscribers") ? btn("subscribers", "Subscribers") : "");
-  const s = (role === "super_admin" ? btn("users", `Users &amp; access <span id="pending-badge"></span>`) : "") + btn("account", "My profile");
+  const s = role === "super_admin" ? btn("users", `Users &amp; access <span id="pending-badge"></span>`) : "";
   const w = window.WS ? Object.entries(WS.tabs).filter(([k]) => can(k)).map(([k, l]) => btn(k, `${l} <span class="nav-badge" data-badge="${k}"></span>`)).join("") : "";
-  $("tabs").innerHTML = (w ? `<span class="grp">Workspace</span>${w}` : "") + (c ? `<span class="grp">Website</span>${c}` : "") + (a ? `<span class="grp">Audience</span>${a}` : "") + `<span class="grp">Access</span>${s}`;
+  $("tabs").innerHTML = btn("account", "My profile") + (w ? `<span class="grp">Workspace</span>${w}` : "") + (c ? `<span class="grp">Website</span>${c}` : "") + (a ? `<span class="grp">Audience</span>${a}` : "") + (s ? `<span class="grp">Access</span>${s}` : "");
   if (window.WS) WS.badges();
   function btn(k,l){ return `<button type="button" data-tab="${k}" ${k===tab?'aria-current="page"':""}>${l}</button>`; }
 }
