@@ -25,7 +25,14 @@ const person = id => PEOPLE[id] || {name: "Someone", email: ""};
 /* How I appear in notifications: my display name, or my email if I haven't set one */
 const myLabel = () => A.myName || (PEOPLE[uid()] || {}).name || (A.me && A.me.email) || "A teammate";
 const pname = id => id === uid() ? "You" : (person(id).name || person(id).email || "Someone");
-function avatar(id, size = 32){
+/* Status: what each person chose (online / busy / away / offline). If we haven't seen them in the
+   admin for 10 minutes, they show as offline whatever they chose. */
+const STATES = [["online", "Online", "🟢"], ["busy", "Busy", "🔴"], ["away", "Away", "🟡"], ["offline", "Appear offline", "⚫"]];
+const stateOf = id => { const p = PEOPLE[id]; if (!p) return "offline"; if (p.status === "offline") return "offline";
+  const seen = toDate(p.lastSeen); if (!seen || Date.now() - seen > 10 * 60 * 1000) return "offline"; return p.status || "online"; };
+const stateLabel = id => { const st = stateOf(id), l = (STATES.find(x => x[0] === st) || STATES[3])[1]; return st === "offline" ? "Offline" : l; };
+function avatar(id, size = 32){ return `<span class="av-wrap" title="${esc(stateLabel(id))}">${avatarBare(id, size)}${size >= 22 && PEOPLE[id] ? `<i class="st st-${stateOf(id)}" style="width:${Math.max(8, Math.round(size * .28))}px;height:${Math.max(8, Math.round(size * .28))}px"></i>` : ""}</span>`; }
+function avatarBare(id, size = 32){
   const p = person(id), src = p.photo ? imgSrc(p.photo) : "";
   const ini = String(p.name || p.email || "?").split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join("");
   return src ? `<img class="avatar" style="width:${size}px;height:${size}px" src="${esc(src)}" alt="" title="${esc(p.name || p.email)}">`
@@ -54,14 +61,14 @@ async function emailNotify(to, text){
 }
 async function resolvePhotos(){
   const ids = Object.values(PEOPLE).map(p => p.photo).filter(p => p && p.startsWith("media:") && !(p.slice(6) in MEDIA));
-  if (ids.length) { await A.loadMedia({ids}); if (current) draw(current); }
+  if (ids.length) { await A.loadMedia({ids}); drawBubble(); if (current) draw(current); }
 }
 
 /* ---------- live data while signed in ---------- */
 function start(){
   stop();
   if (!uid()) return;
-  subs.push(db.collection("users").onSnapshot(s => { PEOPLE = {}; s.docs.forEach(d => PEOPLE[d.id] = d.data()); resolvePhotos(); refresh(); }, () => {}));
+  subs.push(db.collection("users").onSnapshot(s => { PEOPLE = {}; s.docs.forEach(d => PEOPLE[d.id] = d.data()); resolvePhotos(); drawBubble(); refresh(); }, () => {}));
   subs.push(db.collection("notifications").doc(uid()).collection("items").orderBy("createdAt", "desc").limit(40)
     .onSnapshot(s => { NOTES = s.docs.map(d => ({id: d.id, ...d.data()})); bell(); }, () => {}));
   if (canWS("ws_chat")) subs.push(db.collection("channels").where("members", "array-contains", uid())
@@ -88,9 +95,38 @@ function start(){
       subs.push(db.collection("folders").where("members", "array-contains", uid()).onSnapshot(mf("mine"), () => {}));
     }
   }
-  $("bell").hidden = false;
+  $("bell").hidden = false; $("me-bubble-wrap").hidden = false;
+  beat(); clearInterval(beatTimer); beatTimer = setInterval(beat, 4 * 60 * 1000);
 }
-function stop(){ subs.forEach(u => u()); subs = []; leave(); const b = $("bell"); if (b) b.hidden = true; }
+let beatTimer = null;
+function beat(){ if (uid() && document.visibilityState !== "hidden") db.collection("users").doc(uid()).update({lastSeen: TS()}).catch(() => {}); }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") beat(); });
+function drawBubble(){
+  const b = $("me-bubble"); if (!b || !uid()) return;
+  b.innerHTML = avatar(uid(), 36); b.setAttribute("aria-label", "Your status: " + stateLabel(uid()));
+  const m = $("me-menu"); if (m && !m.hidden) drawMeMenu();
+}
+function drawMeMenu(){
+  const p = PEOPLE[uid()] || {}, cur = p.status || "online";
+  $("me-menu").innerHTML = `<div class="mm-head">${avatar(uid(), 44)}<div style="min-width:0"><strong>${esc(p.name || A.me.email)}</strong><span class="hint" style="display:block">${esc(p.title || A.ROLE_LABEL[p.role] || "")}</span></div></div>
+    <p class="hint mm-label">Set your status</p>
+    ${STATES.map(([k, l, ico]) => `<button type="button" class="mm-item${cur === k ? " on" : ""}" data-set-status="${k}"><span>${ico}</span><span>${l}</span>${cur === k ? `<span class="mm-check">✓</span>` : ""}</button>`).join("")}
+    <form class="mm-note" data-status-note><input type="text" maxlength="60" name="note" value="${esc(p.statusText || "")}" placeholder="What are you up to? e.g. In a meeting"><button class="btn sm" type="submit">Set</button></form>
+    <div class="mm-sep"></div>
+    <button type="button" class="mm-item" data-open-profile><span>👤</span><span>My overview</span></button>
+    <a class="mm-item" href="/" target="_blank" rel="noopener"><span>🌐</span><span>Take me to the website</span></a>
+    <button type="button" class="mm-item" data-signout-menu><span>↩</span><span>Sign out</span></button>`;
+}
+async function setStatus(fields){ try { await db.collection("users").doc(uid()).update({...fields, lastSeen: TS()}); } catch { msg("Your status didn't save. Make sure the latest database rules are published.", true); } }
+document.addEventListener("click", e => {
+  if (e.target.closest("#me-bubble")) { const m = $("me-menu"); m.hidden = !m.hidden; $("notif-panel").hidden = true; if (!m.hidden) drawMeMenu(); return; }
+  const st = e.target.closest("[data-set-status]"); if (st) { setStatus({status: st.dataset.setStatus}); return; }
+  if (e.target.closest("[data-signout-menu]")) { const so = document.querySelector("[data-signout]"); if (so) so.click(); return; }
+  const m = $("me-menu"); if (m && !m.hidden && !e.target.closest("#me-menu")) m.hidden = true;
+  if (m && e.target.closest("#me-menu [data-open-profile], #me-menu a")) m.hidden = true;
+});
+document.addEventListener("submit", e => { const f = e.target.closest("[data-status-note]"); if (!f) return; e.preventDefault(); setStatus({statusText: f.note.value.trim().slice(0, 60)}); f.querySelector("button").textContent = "Saved"; });
+function stop(){ subs.forEach(u => u()); subs = []; leave(); clearInterval(beatTimer); const b = $("bell"); if (b) b.hidden = true; const w = $("me-bubble-wrap"); if (w) w.hidden = true; }
 function leave(){ viewSubs.forEach(u => u()); viewSubs = []; current = null; }
 function refresh(k){
   drawSummary();
@@ -165,7 +201,7 @@ function drawNotes(){
       : `<p class="hint" style="padding:16px">Nothing yet. You'll see new tasks, comments and events here.</p>`}`;
 }
 document.addEventListener("click", async e => {
-  if (e.target.closest("#bell")) { const p = $("notif-panel"); p.hidden = !p.hidden; if (!p.hidden) drawNotes(); return; }
+  if (e.target.closest("#bell")) { const mm = $("me-menu"); if (mm) mm.hidden = true; const p = $("notif-panel"); p.hidden = !p.hidden; if (!p.hidden) drawNotes(); return; }
   const all = e.target.closest("[data-notes-all]");
   if (all) { const batch = db.batch(); NOTES.filter(x => !x.read).forEach(x => batch.update(db.collection("notifications").doc(uid()).collection("items").doc(x.id), {read: true})); try { await batch.commit(); } catch {} return; }
   const it = e.target.closest("[data-note]");
@@ -317,7 +353,7 @@ function openThread(id){
   openChannel = id; const c = CHANNELS.find(x => x.id === id); if (!c) return;
   content.querySelector(".chat").classList.add("has-open"); drawChatList();
   const th = $("chat-thread");
-  th.innerHTML = `<header class="th-head"><button class="btn ghost sm th-back" type="button" data-chat-back>← Back</button>${chAvatar(c, 34)}<div><strong>${esc(chName(c))}</strong><div class="hint">${c.type === "group" ? esc(c.members.map(pname).join(", ")) : esc(person(c.members.find(m => m !== uid())).title || "")}</div></div>
+  th.innerHTML = `<header class="th-head"><button class="btn ghost sm th-back" type="button" data-chat-back>← Back</button>${chAvatar(c, 34)}<div><strong>${esc(chName(c))}</strong><div class="hint">${c.type === "group" ? esc(c.members.map(pname).join(", ")) : (o => esc([stateLabel(o), person(o).statusText && stateOf(o) !== "offline" ? person(o).statusText : "", person(o).title].filter(Boolean).join(" · ")))(c.members.find(m => m !== uid()))}</div></div>
       ${c.type === "group" ? `<button class="btn ghost sm" type="button" data-group-edit="${esc(c.id)}" style="margin-left:auto">Members</button>` : ""}</header>
     <div class="msgs" id="msgs"><p class="hint">Loading…</p></div>
     <form class="send" data-send="${esc(id)}"><div class="emoji-wrap"><button class="emoji-btn" type="button" data-emoji-toggle aria-label="Add emoji" aria-expanded="false">😊</button>
@@ -544,7 +580,8 @@ function drawTeam(){
   const ms = members().sort((a, b) => (person(b).role === "super_admin") - (person(a).role === "super_admin") || pname(a).localeCompare(pname(b)));
   content.innerHTML = `<div class="team">${ms.map(id => { const p = person(id);
     return `<article class="tm">${avatar(id, 72)}<strong>${esc(p.name || p.email)}${id === uid() ? ` <span class="chip muted">You</span>` : ""}</strong>
-      <span class="tm-cat">${esc(p.title || "No category yet")}</span><span class="hint">${esc(A.ROLE_LABEL[p.role] || "")}</span>
+      <span class="tm-cat">${esc(p.title || "No category yet")}</span>
+      <span class="hint">${esc(stateLabel(id))}${p.statusText && stateOf(id) !== "offline" ? " · " + esc(p.statusText) : ""}</span><span class="hint">${esc(A.ROLE_LABEL[p.role] || "")}</span>
       ${id === uid() ? "" : `<div class="row-btns">${canWS("ws_chat") ? `<button class="btn ghost sm" type="button" data-dm="${esc(id)}">Message</button>` : ""}${canWS("ws_tasks") && assignable().includes(id) ? `<button class="btn ghost sm" type="button" data-task-for="${esc(id)}">Give a task</button>` : ""}</div>`}</article>`; }).join("")}</div>
     <p class="hint">${isSuper() ? "Set categories, photos and access under Users & access." : "Ask a super admin to update your category. Add your photo under My account."}</p>`;
 }

@@ -178,6 +178,21 @@ input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
 .avatar.grp{font-family:var(--display)}
 .nav-badge .chip{margin-left:6px;padding:0 6px}
 .bell-wrap{position:relative}
+.top-right{display:flex;align-items:center}
+.av-wrap{position:relative;display:inline-flex;flex:none;line-height:0;align-self:center;justify-self:center;height:max-content}
+.tm{align-content:start}
+.st{position:absolute;right:4%;bottom:4%;border-radius:50%;border:2px solid var(--panel);box-sizing:content-box}
+.st-online{background:#3fbf6a}.st-busy{background:#e0483e}.st-away{background:#e7b93b}.st-offline{background:#77706a}
+.me-bubble{background:none;border:0;padding:0;cursor:pointer;border-radius:50%;margin-left:10px;line-height:0}
+.me-bubble:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.me-menu{width:min(300px,92vw);padding:8px 0}
+.mm-head{display:flex;gap:12px;align-items:center;padding:8px 14px 12px;border-bottom:1px solid var(--line)}
+.mm-label{margin:10px 14px 4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase}
+.mm-item{all:unset;box-sizing:border-box;display:flex;gap:10px;align-items:center;width:100%;padding:9px 14px;cursor:pointer;color:var(--text)}
+.mm-item:hover,.mm-item:focus-visible{background:var(--raise)}
+.mm-item.on{color:var(--gold)}.mm-check{margin-left:auto}
+.mm-note{display:flex;gap:6px;padding:6px 14px 8px}.mm-note input{flex:1;min-width:0;padding:8px 10px;font-size:13px}
+.mm-sep{border-top:1px solid var(--line);margin:6px 0}
 .bell{position:relative;background:none;border:1px solid var(--line);color:var(--text);width:40px;height:40px;border-radius:50%;cursor:pointer;display:grid;place-items:center}
 .bell:hover{border-color:var(--gold);color:var(--gold)}
 .bell svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
@@ -342,8 +357,10 @@ input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
   </aside>
   <div class="mainp">
     <div class="top"><div style="display:flex;align-items:center;gap:12px"><button class="btn ghost sm menu-btn" type="button" id="menu-btn" aria-label="Open menu">Menu</button><h2 id="tab-title"></h2></div>
-      <div class="bell-wrap"><button class="bell" type="button" id="bell" aria-label="Notifications" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16v-5a6 6 0 0 0-12 0v5l-2 2h16l-2-2Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span id="bell-count" hidden></span></button>
-      <div class="notif-panel" id="notif-panel" hidden></div></div></div>
+      <div class="top-right"><div class="bell-wrap"><button class="bell" type="button" id="bell" aria-label="Notifications" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16v-5a6 6 0 0 0-12 0v5l-2 2h16l-2-2Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span id="bell-count" hidden></span></button>
+      <div class="notif-panel" id="notif-panel" hidden></div></div>
+      <div class="bell-wrap" id="me-bubble-wrap" hidden><button class="me-bubble" type="button" id="me-bubble" aria-label="Your status" aria-haspopup="true"></button>
+      <div class="notif-panel me-menu" id="me-menu" hidden></div></div></div></div>
     <div class="content" id="content"></div>
     <div class="savebar" id="savebar">
       <p class="status" id="status" role="status" aria-live="polite">All changes saved.</p>
