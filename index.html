@@ -214,6 +214,9 @@ form.signup legend{font-size:13px;letter-spacing:.12em;text-transform:uppercase;
 .btn.ghost:hover{border-color:var(--gold);color:var(--gold)}
 .msg{font-size:15px;color:var(--gold);min-height:1.4em;margin:0}
 @media (max-width:860px){.sub{grid-template-columns:1fr}}
+.sub > *{min-width:0}
+form.signup input[type=text],form.signup input[type=email]{width:100%;min-width:0}
+@media (max-width:360px){form.signup{padding:22px 18px}.freq{grid-template-columns:1fr}}
 
 /* footer */
 footer{border-top:1px solid var(--line);padding:56px 0 48px}
