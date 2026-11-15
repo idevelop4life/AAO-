@@ -32,11 +32,11 @@
 }
 /* Light ("bright") mode, chosen with the switch in the top bar. */
 :root[data-theme="light"]{
-  /* Gold mode: champagne gold with faint tiger stripes; deep bronze for accents; black buttons with gold text. */
-  --ink:#e8d09a; --panel:#efdbab; --card:#ecd5a2; --line:#cdb072; --gold:#5a4310; --gold-soft:#8a6a24;
-  --text:#1d1a14; --muted:#4a3f2c; --danger:#8e2a1c;
-  --bar:rgba(232,208,154,.92); --overlay:rgba(232,208,154,.97); --scrim:rgba(232,208,154,.85);
-  --gold-fill:#1d1a14; --gold-hover:#000000; --on-gold:#e8d09a;
+  /* Gold mode: soft antique gold, very faint tiger stripes, near-black text for easy reading. */
+  --ink:#d2b980; --panel:#d9c28e; --card:#d9c38f; --line:#b39860; --gold:#4a3a12; --gold-soft:#7d6225;
+  --text:#14110b; --muted:#2e2618; --danger:#7a2214;
+  --bar:rgba(210,185,128,.95); --overlay:rgba(210,185,128,.98); --scrim:rgba(210,185,128,.88);
+  --gold-fill:#14110b; --gold-hover:#000000; --on-gold:#e6d3a3;
   color-scheme:light;
 }
 *{box-sizing:border-box}
@@ -236,18 +236,27 @@ footer .socials a{padding:8px 12px}
 .theme-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
 header.top .right{display:flex;align-items:center;gap:clamp(14px,2.4vw,28px)}
 /* gold mode accents */
+/* Heavier type in gold mode so words never get lost on the textured background */
+:root[data-theme="light"] body{font-weight:500}
+:root[data-theme="light"] h1,:root[data-theme="light"] h2,:root[data-theme="light"] h3{font-weight:600}
+:root[data-theme="light"] .hero h1{font-weight:600}
+:root[data-theme="light"] .kicker,:root[data-theme="light"] .sec-head .label,:root[data-theme="light"] .venture .st,:root[data-theme="light"] .post .meta,:root[data-theme="light"] .facts dt,:root[data-theme="light"] .quote .by,:root[data-theme="light"] nav a,:root[data-theme="light"] form.signup label.field,:root[data-theme="light"] form.signup legend{font-weight:700;color:var(--gold)}
+:root[data-theme="light"] nav a{color:var(--text)}
+:root[data-theme="light"] .hero p.lede,:root[data-theme="light"] .venture p,:root[data-theme="light"] .interest p,:root[data-theme="light"] .post p,:root[data-theme="light"] .sub .intro p,:root[data-theme="light"] footer p{color:var(--muted)}
+:root[data-theme="light"] .quote blockquote{font-weight:500}
+:root[data-theme="light"] .about p.big{font-weight:500}
 :root[data-theme="light"] body{background:var(--ink) url(/tiger.svg) repeat;background-size:1000px 1000px}
 :root[data-theme="light"] .portrait{border-color:var(--gold-soft);background:var(--card)}
 :root[data-theme="light"] .portrait::after{border-color:var(--gold-soft);opacity:.5}
 :root[data-theme="light"] .quote{background:linear-gradient(180deg,rgba(58,39,6,.06),rgba(58,39,6,0))}
 :root[data-theme="light"] .hero h1 em,:root[data-theme="light"] .venture h3 em{color:var(--gold)}
-:root[data-theme="light"] .socials a{border-color:var(--gold-soft);background:rgba(255,248,228,.35)}
+:root[data-theme="light"] .socials a{border-color:var(--gold-soft);background:rgba(236,220,180,.6);font-weight:600}
 :root[data-theme="light"] .socials a:hover,:root[data-theme="light"] .theme-btn:hover{border-color:var(--gold);color:var(--gold)}
 :root[data-theme="light"] .theme-btn{border-color:var(--gold-soft);color:var(--gold)}
-:root[data-theme="light"] form.signup{background:rgba(255,248,228,.45);border-color:var(--gold-soft)}
-:root[data-theme="light"] form.signup input[type=text],:root[data-theme="light"] form.signup input[type=email],:root[data-theme="light"] .reply-form textarea,:root[data-theme="light"] .reply-form .rname{background:#f8ecd0;border-color:var(--gold-soft)}
+:root[data-theme="light"] form.signup{background:var(--card);border-color:var(--gold-soft)}
+:root[data-theme="light"] form.signup input[type=text],:root[data-theme="light"] form.signup input[type=email],:root[data-theme="light"] .reply-form textarea,:root[data-theme="light"] .reply-form .rname{background:#ecdcb4;border-color:var(--gold-soft);color:var(--text)}
 :root[data-theme="light"] .freq label{border-color:var(--gold-soft)}
-:root[data-theme="light"] .freq input:checked + label{border-color:var(--gold);background:rgba(255,248,228,.6)}
+:root[data-theme="light"] .freq input:checked + label{border-color:var(--gold);background:#ecdcb4}
 :root[data-theme="light"] .gallery img,:root[data-theme="light"] .gallery .ph video{border-color:var(--gold-soft)}
 :root[data-theme="light"] .reader{background:var(--overlay) url(/tiger.svg) repeat}
 :root[data-theme="light"] .btn.ghost{color:var(--text);border-color:var(--gold-soft)}
