@@ -15,7 +15,7 @@ const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["review", "Revie
 const PRIORITIES = [["high", "High"], ["med", "Medium"], ["low", "Low"]];
 const TYPES = ["Content", "Video", "Design", "Social", "Website", "Admin", "Other"];
 
-let PEOPLE = {}, TASKS = [], CHANNELS = [], NOTES = [], EVENTS = [], DOCS = [];
+let PEOPLE = {}, TASKS = [], CHANNELS = [], NOTES = [], EVENTS = [], DOCS = [], FOLDERS = [], migrated = false;
 let subs = [], viewSubs = [], current = null;
 let pendingChannel = null, pendingEvent = null;
 let taskFilter = "all", openChannel = null, calMonth = (d => new Date(d.getFullYear(), d.getMonth(), 1))(new Date()), docFolder = "All";
@@ -68,8 +68,24 @@ function start(){
     .onSnapshot(s => { TASKS = s.docs.map(d => ({id: d.id, ...d.data()})); badges(); refresh("ws_tasks"); refresh("ws_calendar"); }, () => {}));
   if (canWS("ws_calendar")) subs.push(db.collection("events").orderBy("date").limit(500)
     .onSnapshot(s => { EVENTS = s.docs.map(d => ({id: d.id, ...d.data()})); refresh("ws_calendar"); }, () => {}));
-  if (canWS("ws_docs")) subs.push(db.collection("docs").orderBy("createdAt", "desc").limit(500)
-    .onSnapshot(s => { DOCS = s.docs.map(d => ({id: d.id, ...d.data()})); refresh("ws_docs"); }, () => {}));
+  if (canWS("ws_docs")) {
+    /* Super admins see every folder and file. Everyone else only gets folders/files that are open to all,
+       or that list them; the database rules enforce the same thing. */
+    const merged = (col, field, set) => { const parts = {}; return key => s => { parts[key] = s.docs.map(d => ({id: d.id, ...d.data()}));
+      const all = {}; Object.values(parts).flat().forEach(x => all[x.id] = x); set(Object.values(all)); }; };
+    const setDocs = v => { DOCS = v.sort((a, b) => (toDate(b.createdAt) || 0) - (toDate(a.createdAt) || 0)); migrate(); refresh("ws_docs"); };
+    const setFolders = v => { FOLDERS = v.sort((a, b) => String(a.name).localeCompare(String(b.name))); migrate(); refresh("ws_docs"); };
+    if (isSuper()) {
+      subs.push(db.collection("docs").orderBy("createdAt", "desc").limit(1000).onSnapshot(s => setDocs(s.docs.map(d => ({id: d.id, ...d.data()}))), () => {}));
+      subs.push(db.collection("folders").onSnapshot(s => setFolders(s.docs.map(d => ({id: d.id, ...d.data()}))), () => {}));
+    } else {
+      const md = merged(null, null, setDocs), mf = merged(null, null, setFolders);
+      subs.push(db.collection("docs").where("open", "==", true).onSnapshot(md("open"), () => {}));
+      subs.push(db.collection("docs").where("viewers", "array-contains", uid()).onSnapshot(md("mine"), () => {}));
+      subs.push(db.collection("folders").where("open", "==", true).onSnapshot(mf("open"), () => {}));
+      subs.push(db.collection("folders").where("members", "array-contains", uid()).onSnapshot(mf("mine"), () => {}));
+    }
+  }
   $("bell").hidden = false;
 }
 function stop(){ subs.forEach(u => u()); subs = []; leave(); const b = $("bell"); if (b) b.hidden = true; }
@@ -359,22 +375,97 @@ async function saveEvent(form){
 }
 
 /* ===== DOCUMENTS ===== */
+/* Folders live in "folders" ({name, open, members}). Each file copies its folder's access (open / viewers)
+   so the database can check it quickly; changing a folder's access updates its files too. */
+const folderById = id => FOLDERS.find(f => f.id === id);
+const fileFolder = d => d.folderId && folderById(d.folderId) ? d.folderId : (d.folderId || "");
+const docsAccess = id => person(id).role === "super_admin" || (person(id).perms || []).includes("ws_docs");
+function folderWho(f){
+  if (!f || f.open) return "Everyone with Documents access";
+  const names = (f.members || []).filter(id => PEOPLE[id]).map(pname);
+  return names.length ? "Only " + names.join(", ") + " (and super admins)" : "Only super admins";
+}
+async function migrate(){
+  /* One-time tidy-up for files uploaded before folders had access settings (super admin only). */
+  if (migrated || !isSuper()) return;
+  const old = DOCS.filter(d => d.open === undefined); if (!old.length) { migrated = true; return; }
+  migrated = true;
+  try {
+    const ids = {};
+    for (const name of [...new Set(old.map(d => (d.folder || "General").trim()).filter(n => n && n !== "General"))]) {
+      const f = FOLDERS.find(x => x.name === name);
+      ids[name] = f ? f.id : (await db.collection("folders").add({name: name.slice(0, 60), open: true, members: [], createdBy: uid(), createdAt: TS()})).id;
+    }
+    const b = db.batch();
+    old.forEach(d => { const n = (d.folder || "General").trim(), fid = ids[n] || "", f = folderById(fid);
+      b.update(db.collection("docs").doc(d.id), {folderId: fid, folder: fid ? n : "General", open: f ? !!f.open : true, viewers: f && !f.open ? (f.members || []) : []}); });
+    await b.commit();
+  } catch { migrated = false; }
+}
 function drawDocs(){
-  const folders = ["All", ...new Set(DOCS.map(d => d.folder || "General"))];
-  const list = DOCS.filter(d => docFolder === "All" || (d.folder || "General") === docFolder);
+  const list = DOCS.filter(d => docFolder === "All" || fileFolder(d) === docFolder);
+  const cur = docFolder === "All" || docFolder === "" ? null : folderById(docFolder);
+  const target = docFolder === "All" ? "General" : cur ? cur.name : "General";
+  const lock = f => f && !f.open ? ` <span aria-label="private" title="Private folder">🔒</span>` : "";
+  const count = id => DOCS.filter(d => fileFolder(d) === id).length;
   content.innerHTML = `<div class="ws-bar"><label class="btn" style="cursor:pointer">+ Upload files<input type="file" multiple hidden data-doc-upload></label>
-      <label class="f" style="min-width:180px"><span>Folder for new uploads</span><input type="text" list="doc-folders" id="doc-folder" value="${esc(docFolder === "All" ? "General" : docFolder)}" maxlength="60"></label>
-      <datalist id="doc-folders">${folders.slice(1).map(f => `<option value="${esc(f)}">`).join("")}</datalist><span class="hint" id="ws-note"></span></div>
+      ${isSuper() ? `<button class="btn ghost" type="button" data-new-folder>+ New folder</button>` : ""}
+      <span class="hint">Uploads go into <strong>${esc(target)}</strong></span><span class="hint" id="ws-note"></span></div>
     <div class="progress" id="doc-progress" hidden><i></i></div>
-    <div class="chips">${folders.map(f => `<button class="fchip${f === docFolder ? " on" : ""}" type="button" data-folder="${esc(f)}">${esc(f)}</button>`).join("")}</div>
+    <div class="chips"><button class="fchip${docFolder === "All" ? " on" : ""}" type="button" data-folder="All">All files</button>
+      <button class="fchip${docFolder === "" ? " on" : ""}" type="button" data-folder="">General <span class="hint">${count("")}</span></button>
+      ${FOLDERS.map(f => `<button class="fchip${f.id === docFolder ? " on" : ""}" type="button" data-folder="${esc(f.id)}">${esc(f.name)}${lock(f)} <span class="hint">${count(f.id)}</span></button>`).join("")}</div>
+    ${docFolder !== "All" ? `<div class="folder-head"><span class="hint">Who can see <strong>${esc(cur ? cur.name : "General")}</strong>: ${esc(folderWho(cur))}</span>
+      ${isSuper() && cur ? `<button class="btn ghost sm" type="button" data-folder-settings="${esc(cur.id)}">Folder settings</button>` : ""}</div>` : ""}
     ${list.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Name</th><th>Folder</th><th>Size</th><th>Added by</th><th></th></tr></thead><tbody>
-      ${list.map(d => `<tr><td><a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.name)}</a></td><td>${esc(d.folder || "General")}</td><td class="num">${esc(fmtSize(d.size || 0))}</td>
+      ${list.map(d => { const fid = fileFolder(d), f = folderById(fid);
+        return `<tr><td><a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.name)}</a></td>
+        <td>${isSuper() ? `<select class="move-sel" data-move-doc="${esc(d.id)}" aria-label="Move to folder"><option value="">General</option>${FOLDERS.map(x => `<option value="${esc(x.id)}" ${x.id === fid ? "selected" : ""}>${esc(x.name)}${x.open ? "" : " (private)"}</option>`).join("")}</select>`
+          : `${esc(f ? f.name : "General")}${lock(f)}`}</td><td class="num">${esc(fmtSize(d.size || 0))}</td>
         <td><span class="who-cell">${avatar(d.uploadedBy, 22)} ${esc(pname(d.uploadedBy))}</span><div class="hint">${esc(when(d.createdAt))}</div></td>
-        <td>${isSuper() || d.uploadedBy === uid() ? `<button class="btn danger sm" type="button" data-del-doc="${esc(d.id)}">Delete</button>` : ""}</td></tr>`).join("")}</tbody></table></div>`
+        <td>${isSuper() || d.uploadedBy === uid() ? `<button class="btn danger sm" type="button" data-del-doc="${esc(d.id)}">Delete</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`
       : `<div class="empty">No documents here yet. Upload briefs, scripts, brand files and anything the team needs.</div>`}`;
 }
+function folderForm(f){
+  f = f || {open: true, members: []};
+  const people = members().filter(id => person(id).role !== "super_admin" && docsAccess(id));
+  return `<form data-folder-form="${esc(f.id || "")}" style="display:grid;gap:14px">
+    <h3 class="group-title" style="margin-top:0">${f.id ? "Folder settings" : "New folder"}</h3>
+    <label class="f"><span>Folder name</span><input type="text" name="fname" maxlength="60" required value="${esc(f.name || "")}" placeholder="e.g. Brand assets"></label>
+    <fieldset class="perm-box"><legend>Who can see it</legend>
+      <label class="f check"><input type="radio" name="open" value="1" ${f.open ? "checked" : ""}><span>Everyone with Documents access</span></label>
+      <label class="f check"><input type="radio" name="open" value="0" ${f.open ? "" : "checked"}><span>Only the people I choose</span></label>
+      <div class="invite-list" data-folder-people ${f.open ? "hidden" : ""}>${people.length ? people.map(id => `<label class="inv"><input type="checkbox" name="mem" value="${esc(id)}" ${(f.members || []).includes(id) ? "checked" : ""}>${avatar(id, 28)}<span class="inv-t"><strong>${esc(pname(id))}</strong><span class="hint">${esc(person(id).title || person(id).email || "")}</span></span></label>`).join("")
+        : `<p class="hint">No admins have Documents access yet. Give it under Users &amp; access.</p>`}</div>
+      <p class="hint" style="margin:0">Super admins can always see every folder.</p></fieldset>
+    <div class="row-btns"><button class="btn" type="submit">${f.id ? "Save folder" : "Create folder"}</button>
+      ${f.id ? `<button class="btn danger sm" type="button" data-del-folder="${esc(f.id)}">Delete folder</button>` : ""}</div>
+    <p class="hint" id="folder-msg" role="status" aria-live="polite"></p></form>`;
+}
+async function saveFolder(form){
+  const id = form.dataset.folderForm, name = form.fname.value.trim().slice(0, 60), open = form.querySelector("[name=open]:checked").value === "1";
+  const mem = open ? [] : [...form.querySelectorAll("[name=mem]:checked")].map(i => i.value);
+  if (!name) { $("folder-msg").textContent = "Give the folder a name."; return; }
+  form.querySelector("[type=submit]").disabled = true;
+  try {
+    if (!id) { const r = await db.collection("folders").add({name, open, members: mem, createdBy: uid(), createdAt: TS()}); docFolder = r.id; msg(`Folder "${name}" created.`); }
+    else {
+      const b = db.batch(); b.update(db.collection("folders").doc(id), {name, open, members: mem});
+      DOCS.filter(d => d.folderId === id).forEach(d => b.update(db.collection("docs").doc(d.id), {folder: name, open, viewers: mem}));
+      await b.commit(); msg("Folder saved.");
+      mem.filter(p => !(folderById(id).members || []).includes(p)).forEach(p => notify(p, `${A.myName || "Someone"} shared the "${name}" folder with you`, {tab: "ws_docs"}));
+    }
+    closeModal(); drawDocs();
+  } catch { $("folder-msg").textContent = "That didn't save. Make sure the latest database rules are published."; form.querySelector("[type=submit]").disabled = false; }
+}
+async function moveDoc(id, fid){
+  const f = folderById(fid);
+  try { await db.collection("docs").doc(id).update({folderId: fid, folder: f ? f.name : "General", open: f ? !!f.open : true, viewers: f && !f.open ? (f.members || []) : []}); msg(`Moved to ${f ? f.name : "General"}.`); }
+  catch { msg("Couldn't move that file.", true); }
+}
 async function uploadDocs(files){
-  const folder = (($("doc-folder") || {}).value || "General").trim().slice(0, 60) || "General";
+  const fid = docFolder === "All" ? "" : docFolder, f = folderById(fid);
+  const access = {folderId: f ? fid : "", folder: f ? f.name : "General", open: f ? !!f.open : true, viewers: f && !f.open ? (f.members || []) : []};
   const bar = $("doc-progress"); bar.hidden = false;
   for (const file of files) {
     if (file.size > 50 * 1024 * 1024) { msg(`${file.name} is over 50 MB and was skipped.`, true); continue; }
@@ -383,9 +474,9 @@ async function uploadDocs(files){
       const task = ref.put(file, {contentType: file.type || "application/octet-stream"});
       task.on("state_changed", s => { bar.firstElementChild.style.width = Math.round(s.bytesTransferred / s.totalBytes * 100) + "%"; msg(`Uploading ${file.name}… ${Math.round(s.bytesTransferred / s.totalBytes * 100)}%`); });
       await task;
-      await db.collection("docs").add({name: file.name.slice(0, 200), folder, path, url: await ref.getDownloadURL(), size: file.size, type: file.type || "", uploadedBy: uid(), createdAt: TS()});
-      msg(`${file.name} uploaded.`);
-    } catch { msg(`${file.name} didn't upload. Check your Documents access and that the latest storage rules are published.`, true); }
+      await db.collection("docs").add({name: file.name.slice(0, 200), ...access, path, url: await ref.getDownloadURL(), size: file.size, type: file.type || "", uploadedBy: uid(), createdAt: TS()});
+      msg(`${file.name} uploaded to ${access.folder}.`);
+    } catch { msg(`${file.name} didn't upload. Check your Documents access and that the latest rules are published.`, true); }
   }
   bar.hidden = true;
 }
@@ -418,12 +509,17 @@ content.addEventListener("click", e => {
   if ((b = g("[data-event]"))) { openEvent(b.dataset.event); return; }
   if ((b = g("[data-new-event]"))) { modal(`<h3 class="group-title" style="margin-top:0">New event</h3>` + eventForm({date: b.dataset.newEvent})); return; }
   if ((b = g("[data-folder]"))) { docFolder = b.dataset.folder; drawDocs(); return; }
+  if ((b = g("[data-new-folder]"))) { modal(folderForm()); return; }
+  if ((b = g("[data-folder-settings]"))) { modal(folderForm(folderById(b.dataset.folderSettings))); return; }
   if ((b = g("[data-dm]"))) { openDM(b.dataset.dm); return; }
   if ((b = g("[data-del-doc]"))) { confirmThen(b, async () => { const d = DOCS.find(x => x.id === b.dataset.delDoc); try { if (d && d.path) await storage.ref(d.path).delete().catch(() => {}); await db.collection("docs").doc(b.dataset.delDoc).delete(); msg("Document deleted."); } catch { msg("Couldn't delete that document.", true); } }); return; }
 });
 document.addEventListener("click", e => {   /* things inside the modal (outside #content) */
   const g = s => e.target.closest(s); let b;
   if ((b = g("#ws-modal [data-dm]"))) { openDM(b.dataset.dm); return; }
+  if ((b = g("[data-del-folder]"))) { const fid = b.dataset.delFolder, n = DOCS.filter(d => d.folderId === fid).length;
+    if (n) { $("folder-msg").textContent = `This folder still has ${n} file${n === 1 ? "" : "s"}. Move or delete them first.`; return; }
+    confirmThen(b, async () => { try { await db.collection("folders").doc(fid).delete(); docFolder = "All"; closeModal(); drawDocs(); msg("Folder deleted."); } catch { msg("Couldn't delete that folder.", true); } }); return; }
   if ((b = g("[data-group-save]"))) { saveGroup($("ws-modal").dataset.group || ""); return; }
   if ((b = g("[data-del-task]"))) { confirmThen(b, async () => { try { await db.collection("tasks").doc(b.dataset.delTask).delete(); closeModal(); msg("Task deleted."); } catch { msg("Couldn't delete that task.", true); } }); return; }
   if ((b = g("[data-del-event]"))) { confirmThen(b, async () => { try { await db.collection("events").doc(b.dataset.delEvent).delete(); closeModal(); msg("Event deleted."); } catch { msg("Couldn't delete that event.", true); } }); return; }
@@ -433,6 +529,7 @@ document.addEventListener("submit", async e => {
   const f = e.target;
   if (f.matches("[data-task-form]")) { e.preventDefault(); saveTask(f); }
   else if (f.matches("[data-event-form]")) { e.preventDefault(); saveEvent(f); }
+  else if (f.matches("[data-folder-form]")) { e.preventDefault(); saveFolder(f); }
   else if (f.matches("[data-send]")) { e.preventDefault(); sendMsg(f); }
   else if (f.matches("[data-comment-form]")) {
     e.preventDefault(); const id = f.dataset.commentForm, ta = f.querySelector("textarea"), text = ta.value.trim().slice(0, 2000); if (!text) return;
@@ -448,5 +545,11 @@ content.addEventListener("change", e => {
   if (e.target.matches("[data-doc-upload]") && e.target.files.length) uploadDocs([...e.target.files]);
 });
 
+document.addEventListener("change", e => {
+  const r = e.target.closest("[data-folder-form] [name=open]"); if (r) { const box = document.querySelector("[data-folder-people]"); if (box) box.hidden = r.value === "1"; }
+  const m = e.target.closest("[data-move-doc]"); if (m) moveDoc(m.dataset.moveDoc, m.value);
+});
+
 window.WS = {tabs: TABS, draw, start, stop, leave, badges};
 })();
+

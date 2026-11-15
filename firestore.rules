@@ -178,10 +178,36 @@ service cloud.firestore {
     }
 
     // Shared documents (the files themselves live in Storage under workspace/)
+    // Document folders: only super admins create or change them. A folder is either open to everyone
+    // with Documents access, or only to the people listed in "members". Super admins see everything.
+    match /folders/{fid} {
+      allow read: if isSuper()
+        || (canDo('ws_docs') && (resource.data.open == true || request.auth.uid in resource.data.members));
+      allow create, update: if isSuper()
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        && request.resource.data.open is bool && request.resource.data.members is list;
+      allow delete: if isSuper();
+    }
+
+    // Each file copies its folder's access ("open" and "viewers") so it can be checked quickly.
+    function folderDoc(fid) { return /databases/$(database)/documents/folders/$(fid); }
+    function matchesFolder(d) {
+      return (d.folderId == '' && d.open == true && d.viewers.size() == 0)
+        || (exists(folderDoc(d.folderId))
+            && get(folderDoc(d.folderId)).data.open == d.open
+            && (d.open == true ? d.viewers.size() == 0 : d.viewers == get(folderDoc(d.folderId)).data.members)
+            && (isSuper() || d.open == true || request.auth.uid in d.viewers));
+    }
     match /docs/{id} {
-      allow read: if canDo('ws_docs');
-      allow create: if canDo('ws_docs') && request.resource.data.uploadedBy == request.auth.uid;
-      allow delete: if isSuper() || (canDo('ws_docs') && resource.data.uploadedBy == request.auth.uid);
+      allow read: if isSuper()
+        || (canDo('ws_docs') && (resource.data.open == true || request.auth.uid in resource.data.viewers));
+      allow create: if canDo('ws_docs') && request.resource.data.uploadedBy == request.auth.uid
+        && request.resource.data.folderId is string && request.resource.data.open is bool && request.resource.data.viewers is list
+        && matchesFolder(request.resource.data);
+      allow update: if isSuper()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['folderId', 'folder', 'open', 'viewers']);
+      allow delete: if isSuper() || (canDo('ws_docs') && resource.data.uploadedBy == request.auth.uid
+        && (resource.data.open == true || request.auth.uid in resource.data.viewers));
     }
   }
 }
