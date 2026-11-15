@@ -91,6 +91,7 @@ function start(){
 function stop(){ subs.forEach(u => u()); subs = []; leave(); const b = $("bell"); if (b) b.hidden = true; }
 function leave(){ viewSubs.forEach(u => u()); viewSubs = []; current = null; }
 function refresh(k){
+  drawSummary();
   if (!current || (k && current !== k)) return;
   if (current === "ws_chat") {                                    /* never rebuild an open conversation */
     if (pendingChannel && CHANNELS.find(c => c.id === pendingChannel)) { const id = pendingChannel; pendingChannel = null; openThread(id); return; }
@@ -103,7 +104,50 @@ function refresh(k){
 
 /* ---------- badges + bell ---------- */
 const unreadChannels = () => CHANNELS.filter(c => c.lastAt && c.lastFrom !== uid() && (!c.reads || !c.reads[uid()] || toDate(c.reads[uid()]) < toDate(c.lastAt))).length;
+/* Task rules: only the person who created a task edits or reassigns it. The person it's assigned to can
+   move it along (change its status) and comment. Everyone else with Tasks access can comment. */
+const EMOJI = [
+  ["Smileys", "😀 😂 🥹 😊 😍 🥰 😘 😎 🤩 🥳 😅 😉 🤔 🙃 😴 😭 😤 😱 🤯 🙄 😬 🤗 🫡 🤭"],
+  ["Hands", "👍 👎 👏 🙌 🙏 💪 👀 👋 🤝 ✌️ 🤞 👌 🫶 ☝️ ✍️"],
+  ["Hearts", "❤️ 🧡 💛 💚 💙 💜 🖤 🤍 💯 ✨ 🔥 ⭐ 🌟 💫 🎉 🎊"],
+  ["Work", "✅ ❌ ⏰ 📅 📌 📎 📝 📣 💡 🚀 🎯 📈 💼 💰 📸 🎥 🎬 🎤 📱 💻"],
+  ["Fun", "☕ 🍾 🥂 🍕 🌍 🇳🇬 🇺🇸 🐯 👑 💎 🌸 🌻 🎶 🏆"]
+].map(([g, s]) => [g, s.split(" ")]);
+const isCreator = t => t.reporter === uid();
+const canMove = t => isCreator(t) || t.assignee === uid();
 const myOpenTasks = () => TASKS.filter(t => t.assignee === uid() && t.status !== "done").length;
+/* "Your week" on My profile */
+function summaryHTML(){
+  if (!uid()) return "";
+  const today = new Date().toISOString().slice(0, 10), soon = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
+  const cards = [];
+  if (canWS("ws_tasks")) {
+    const mine = TASKS.filter(t => t.assignee === uid() && t.status !== "done").sort((a, b) => (a.due || "9") < (b.due || "9") ? -1 : 1);
+    const late = mine.filter(t => t.due && t.due < today).length;
+    const waiting = TASKS.filter(t => t.reporter === uid() && t.assignee !== uid() && t.status !== "done").length;
+    cards.push(`<section class="sum-card"><h4>Your tasks <span class="chip">${mine.length}</span></h4>
+      ${late ? `<p class="hint err" style="margin:0">${late} overdue</p>` : ""}
+      ${mine.slice(0, 3).map(t => `<button class="sum-row" type="button" data-open-task="${esc(t.id)}"><span>${esc(t.title)}</span><span class="hint">${t.due ? "Due " + esc(fmtDay(t.due)) : esc((STATUSES.find(x => x[0] === (t.status || "todo")) || STATUSES[0])[1])}</span></button>`).join("") || `<p class="hint">Nothing assigned to you right now.</p>`}
+      ${waiting ? `<p class="hint">You're waiting on ${waiting} task${waiting === 1 ? "" : "s"} you gave to others.</p>` : ""}
+      <button class="btn ghost sm" type="button" data-go="ws_tasks">Open Tasks</button></section>`);
+  }
+  if (canWS("ws_calendar")) {
+    const up = EVENTS.filter(e => e.date >= today && e.date <= soon && (e.attendees || []).includes(uid())).sort((a, b) => (a.date + (a.start || "")) < (b.date + (b.start || "")) ? -1 : 1);
+    cards.push(`<section class="sum-card"><h4>Coming up <span class="chip">${up.length}</span></h4>
+      ${up.slice(0, 3).map(e => `<button class="sum-row" type="button" data-go="ws_calendar"><span>${esc(e.title)}</span><span class="hint">${esc(fmtDay(e.date))}${e.allDay || !e.start ? "" : " · " + esc(e.start)}</span></button>`).join("") || `<p class="hint">No events in the next two weeks.</p>`}
+      <button class="btn ghost sm" type="button" data-go="ws_calendar">Open Calendar</button></section>`);
+  }
+  if (canWS("ws_chat")) {
+    const n = unreadChannels();
+    cards.push(`<section class="sum-card"><h4>Messages <span class="chip">${n}</span></h4>
+      <p class="hint">${n ? `${n} conversation${n === 1 ? " has" : "s have"} new messages.` : "You're all caught up."}</p>
+      <button class="btn ghost sm" type="button" data-go="ws_chat">Open Chat</button></section>`);
+  }
+  return cards.length ? `<h3 class="group-title">Your week</h3><div class="sum-grid">${cards.join("")}</div>` : "";
+}
+function drawSummary(){ const box = $("me-summary"); if (box) box.innerHTML = summaryHTML(); }
+document.addEventListener("click", e => { const g = e.target.closest("#me-summary [data-go]"); if (g) A.goto(g.dataset.go); });
+
 function badges(){
   const set = (k, n) => document.querySelectorAll(`[data-badge="${k}"]`).forEach(b => b.innerHTML = n ? `<span class="chip">${n}</span>` : "");
   set("ws_chat", unreadChannels()); set("ws_tasks", myOpenTasks());
@@ -158,7 +202,7 @@ function drawTasks(open){
     </div>
     <div class="board">${STATUSES.map(([k, l]) => { const col = list.filter(t => (t.status || "todo") === k);
       return `<section class="col" data-col="${k}"><h3>${l} <span class="hint">${col.length}</span></h3>
-        ${col.map(t => `<button class="card" type="button" draggable="true" data-task="${esc(t.id)}">
+        ${col.map(t => `<button class="card" type="button" draggable="${canMove(t)}" data-task="${esc(t.id)}">
           <span class="card-top"><span class="tchip">${esc(t.type || "Task")}</span><span class="prio p-${esc(t.priority || "med")}" title="${esc((PRIORITIES.find(p => p[0] === t.priority) || PRIORITIES[1])[1])} priority"></span></span>
           <span class="card-title">${esc(t.title)}</span>
           <span class="card-foot">${avatar(t.assignee, 24)}<span class="hint">${t.due ? "Due " + esc(fmtDay(t.due)) : ""}</span>${t.comments ? `<span class="hint">💬 ${t.comments}</span>` : ""}</span>
@@ -194,10 +238,17 @@ document.addEventListener("click", e => { if (e.target.closest("[data-close-moda
 
 function openTask(id){
   const t = TASKS.find(x => x.id === id); if (!t) return;
-  const mayEdit = isSuper() || canAssign() || t.reporter === uid() || t.assignee === uid();
+  const mayEdit = isCreator(t), mayMove = canMove(t);
+  const pr = (PRIORITIES.find(p => p[0] === t.priority) || PRIORITIES[1])[1];
+  const readOnly = `<h3 class="group-title" style="margin-top:6px">${esc(t.title)}</h3>
+    <dl class="task-facts"><div><dt>Assigned to</dt><dd><span class="who-cell">${avatar(t.assignee, 22)} ${esc(pname(t.assignee))}</span></dd></div>
+      <div><dt>Status</dt><dd>${mayMove ? `<select data-task-status="${esc(t.id)}" aria-label="Move this task">${STATUSES.map(([k, l]) => `<option value="${k}" ${(t.status || "todo") === k ? "selected" : ""}>${l}</option>`).join("")}</select>` : esc((STATUSES.find(x => x[0] === (t.status || "todo")) || STATUSES[0])[1])}</dd></div>
+      <div><dt>Priority</dt><dd>${esc(pr)}</dd></div><div><dt>Due</dt><dd>${t.due ? esc(fmtDay(t.due)) : "No date"}</dd></div></dl>
+    ${t.desc ? `<p style="white-space:pre-wrap">${esc(t.desc)}</p>` : ""}
+    <p class="hint">${mayMove ? `Only ${esc(pname(t.reporter))} (who created this) can edit or reassign it. You can move it along and comment.` : `Only ${esc(pname(t.reporter))} (who created this) can edit it. You can comment below.`}</p>`;
   const gcal = t.due ? gcalLink({title: "Due: " + t.title, date: t.due, allDay: true, desc: t.desc}) : "";
   modal(`<p class="hint" style="margin:0">${esc(t.type || "Task")} · created by ${esc(pname(t.reporter))} ${esc(when(t.createdAt))}</p>
-    ${mayEdit ? taskForm(t) : `<h3 class="group-title">${esc(t.title)}</h3><p>${esc(t.desc || "")}</p>`}
+    ${mayEdit ? taskForm(t) : readOnly}
     <div class="row-btns">${gcal ? `<a class="btn ghost sm" href="${esc(gcal)}" target="_blank" rel="noopener">Add due date to Google Calendar</a>` : ""}
       ${isSuper() || t.reporter === uid() ? `<button class="btn danger sm" type="button" data-del-task="${esc(t.id)}">Delete task</button>` : ""}</div>
     <h3 class="group-title">Comments</h3><div class="comments" id="task-comments"><p class="hint">Loading…</p></div>
@@ -228,11 +279,14 @@ async function saveTask(form){
 }
 async function moveTask(id, status){
   const t = TASKS.find(x => x.id === id); if (!t || t.status === status) return;
+  if (!canMove(t)) { msg("Only the person who created this task, or the person it's assigned to, can move it.", true); return; }
   try { await db.collection("tasks").doc(id).update({status, updatedAt: TS()});
     const label = STATUSES.find(s => s[0] === status)[1];
     notify(t.reporter, `"${t.title}" moved to ${label}`, {tab: "ws_tasks", id}); notify(t.assignee, `"${t.title}" moved to ${label}`, {tab: "ws_tasks", id});
-  } catch { msg("You can only move tasks you created or that are assigned to you.", true); }
+    return true;
+  } catch { msg("That move didn't save. Make sure the latest database rules are published.", true); }
 }
+document.addEventListener("change", e => { const s = e.target.closest("[data-task-status]"); if (s) moveTask(s.dataset.taskStatus, s.value).then(ok => { if (ok) msg("Task moved."); }); });
 content.addEventListener("dragstart", e => { const c = e.target.closest("[data-task]"); if (c) { e.dataTransfer.setData("text/plain", c.dataset.task); c.classList.add("dragging"); } });
 content.addEventListener("dragend", e => { const c = e.target.closest("[data-task]"); if (c) c.classList.remove("dragging"); });
 content.addEventListener("dragover", e => { const col = e.target.closest("[data-col]"); if (col) { e.preventDefault(); col.classList.add("over"); } });
@@ -264,7 +318,9 @@ function openThread(id){
   th.innerHTML = `<header class="th-head"><button class="btn ghost sm th-back" type="button" data-chat-back>← Back</button>${chAvatar(c, 34)}<div><strong>${esc(chName(c))}</strong><div class="hint">${c.type === "group" ? esc(c.members.map(pname).join(", ")) : esc(person(c.members.find(m => m !== uid())).title || "")}</div></div>
       ${c.type === "group" ? `<button class="btn ghost sm" type="button" data-group-edit="${esc(c.id)}" style="margin-left:auto">Members</button>` : ""}</header>
     <div class="msgs" id="msgs"><p class="hint">Loading…</p></div>
-    <form class="send" data-send="${esc(id)}"><textarea name="text" maxlength="4000" placeholder="Write a message…" rows="1" required></textarea><button class="btn sm" type="submit">Send</button></form>`;
+    <form class="send" data-send="${esc(id)}"><div class="emoji-wrap"><button class="emoji-btn" type="button" data-emoji-toggle aria-label="Add emoji" aria-expanded="false">😊</button>
+      <div class="emoji-pop" hidden role="dialog" aria-label="Emoji">${EMOJI.map(([g, list]) => `<p class="hint">${g}</p><div class="emoji-grid">${[...list].filter(c => c.trim()).map(c => `<button type="button" data-emoji="${c}">${c}</button>`).join("")}</div>`).join("")}</div></div>
+      <textarea name="text" maxlength="4000" placeholder="Write a message…" rows="1" required></textarea><button class="btn sm" type="submit">Send</button></form>`;
   viewSubs.forEach(u => u()); viewSubs = [];
   viewSubs.push(db.collection("channels").doc(id).collection("messages").orderBy("at").limitToLast(200).onSnapshot(s => {
     const box = $("msgs"); if (!box) return;
@@ -550,6 +606,14 @@ document.addEventListener("change", e => {
   const m = e.target.closest("[data-move-doc]"); if (m) moveDoc(m.dataset.moveDoc, m.value);
 });
 
-window.WS = {tabs: TABS, draw, start, stop, leave, badges};
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-emoji-toggle]"), pick = e.target.closest("[data-emoji]");
+  if (t) { const pop = t.nextElementSibling; pop.hidden = !pop.hidden; t.setAttribute("aria-expanded", String(!pop.hidden)); return; }
+  if (pick) { const f = pick.closest("form"), ta = f.querySelector("textarea"), a = ta.selectionStart ?? ta.value.length, z = ta.selectionEnd ?? a;
+    ta.value = ta.value.slice(0, a) + pick.dataset.emoji + ta.value.slice(z); ta.focus(); ta.selectionStart = ta.selectionEnd = a + pick.dataset.emoji.length; return; }
+  document.querySelectorAll(".emoji-pop:not([hidden])").forEach(p => { if (!p.parentElement.contains(e.target)) { p.hidden = true; p.previousElementSibling.setAttribute("aria-expanded", "false"); } });
+});
+
+window.WS = {tabs: TABS, draw, start, stop, leave, badges, drawSummary};
 })();
 

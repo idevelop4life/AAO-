@@ -127,11 +127,16 @@ service cloud.firestore {
         && request.resource.data.reporter == request.auth.uid
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200
         && (request.resource.data.assignee == request.auth.uid || canAssign() || isSuperUser(request.resource.data.assignee));
-      allow update: if canDo('ws_tasks')
-        && (resource.data.reporter == request.auth.uid || resource.data.assignee == request.auth.uid || canAssign())
-        && request.resource.data.reporter == resource.data.reporter
-        && (request.resource.data.assignee == resource.data.assignee || request.resource.data.assignee == request.auth.uid
-            || canAssign() || isSuperUser(request.resource.data.assignee));
+      // Only the creator edits or reassigns a task. The assignee can only move it (status).
+      // Anyone with Tasks access can bump the comment count when they comment.
+      allow update: if canDo('ws_tasks') && (
+          (resource.data.reporter == request.auth.uid
+            && request.resource.data.reporter == resource.data.reporter
+            && (request.resource.data.assignee == resource.data.assignee || request.resource.data.assignee == request.auth.uid
+                || canAssign() || isSuperUser(request.resource.data.assignee)))
+          || (resource.data.assignee == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']));
       allow delete: if isSuper() || (canDo('ws_tasks') && resource.data.reporter == request.auth.uid);
 
       match /comments/{cid} {

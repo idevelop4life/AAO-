@@ -340,7 +340,7 @@ const CONTENT_TABS = {
     ${[["about","About"],["building","Building"],["interests","Interests"],["gallery","Gallery"],["thoughts","Thoughts"],["quote","Quote"],["journal","Journal"],["subscribe","Subscribe"]].map(([k,l]) => fCheck(l, ["sections",k])).join("")}`]
 };
 const OTHER_TABS = {
-  replies: "Replies", subscribers: "Subscribers", users: "Users & access", account: "My profile"
+  replies: "Replies", subscribers: "Subscribers", users: "Users & access", account: "My overview"
 };
 
 function drawNav(){
@@ -348,7 +348,7 @@ function drawNav(){
   const a = (can("replies") ? btn("replies", "Replies") : "") + (can("subscribers") ? btn("subscribers", "Subscribers") : "");
   const s = role === "super_admin" ? btn("users", `Users &amp; access <span id="pending-badge"></span>`) : "";
   const w = window.WS ? Object.entries(WS.tabs).filter(([k]) => can(k)).map(([k, l]) => btn(k, `${l} <span class="nav-badge" data-badge="${k}"></span>`)).join("") : "";
-  $("tabs").innerHTML = btn("account", "My profile") + (w ? `<span class="grp">Workspace</span>${w}` : "") + (c ? `<span class="grp">Website</span>${c}` : "") + (a ? `<span class="grp">Audience</span>${a}` : "") + (s ? `<span class="grp">Access</span>${s}` : "");
+  $("tabs").innerHTML = btn("account", "My overview") + (w ? `<span class="grp">Workspace</span>${w}` : "") + (c ? `<span class="grp">Website</span>${c}` : "") + (a ? `<span class="grp">Audience</span>${a}` : "") + (s ? `<span class="grp">Access</span>${s}` : "");
   if (window.WS) WS.badges();
   function btn(k,l){ return `<button type="button" data-tab="${k}" ${k===tab?'aria-current="page"':""}>${l}</button>`; }
 }
@@ -663,28 +663,50 @@ function paintMe(){
   el.innerHTML = `<button type="button" class="me-link" data-open-profile>${avatarHTML({name: myName, email: me.email, photo: myPhoto}, 36)}<span><strong>${esc(myName || "Add your name")}</strong><span class="hint" style="display:block">${esc(me.email)}</span></span></button>`;
   if (myPhoto) loadMedia({p: myPhoto}).then(() => { const i = el.querySelector("img"); if (i) i.src = imgSrc(myPhoto); });
 }
-document.addEventListener("click", e => { if (e.target.closest("[data-open-profile]")) { $("side").classList.remove("open"); window.__ADMIN.goto("account"); } });
+document.addEventListener("click", e => { if (e.target.closest("[data-open-profile]")) { e.preventDefault(); $("side").classList.remove("open"); window.__ADMIN.goto("account"); } });
 function drawAccount(){
-  setTimeout(() => { const s = $("me-avatar"); if (s) { s.innerHTML = avatarHTML({name: myName, email: me.email, photo: myPhoto}, 64); loadMedia({p: myPhoto}).then(() => { const i = s.querySelector("img"); if (i) i.src = imgSrc(myPhoto); }); } }, 0);
+  setTimeout(() => { const s = $("me-avatar"); if (s) { s.innerHTML = avatarHTML({name: myName, email: me.email, photo: myPhoto}, 84); loadMedia({p: myPhoto}).then(() => { const i = s.querySelector("img"); if (i) i.src = imgSrc(myPhoto); }); } if (window.WS) WS.drawSummary(); }, 0);
+  const first = (myName || "").split(" ")[0];
+  const wsHave = WS_PERMS.filter(([k]) => can(k)).map(([,l]) => l), siteHave = PERM_LABELS.filter(([k]) => can(k)).map(([,l]) => l);
+  const chips = l => l.map(x => `<span class="chip muted">${esc(x)}</span>`).join(" ");
   content.innerHTML = `
+    <section class="me-hero">
+      <span id="me-avatar"></span>
+      <div style="min-width:0">
+        <p class="hint" style="margin:0">Welcome${first ? ", " + esc(first) : ""}</p>
+        <h3 class="me-name">${esc(myName || me.email)}</h3>
+        <p style="margin:2px 0 0">${myTitle ? `<strong>${esc(myTitle)}</strong> · ` : ""}${ROLE_LABEL[role]}</p>
+        <p class="hint" style="margin:2px 0 0">${esc(me.email)}</p>
+      </div>
+    </section>
+    <p class="hint" style="max-width:640px">This is your home in the admin. It shows what's waiting for you and what you have access to. Use the menu to get to your work.</p>
+    <div id="me-summary"></div>
+    <h3 class="group-title">What you can use</h3>
+    ${role === "super_admin" ? `<p class="hint">Everything. As a super admin you can also manage people under Users &amp; access.</p>`
+      : `<div style="display:grid;gap:8px">
+          <div><span class="hint">Workspace:</span> ${wsHave.length ? chips(wsHave) : `<span class="hint">nothing yet</span>`}</div>
+          <div><span class="hint">Website:</span> ${siteHave.length ? chips(siteHave) : `<span class="hint">nothing yet</span>`}</div>
+          ${wsHave.length + siteHave.length ? "" : `<p class="hint">Ask a super admin to give you access.</p>`}</div>`}
     <form id="name-form" style="display:grid;gap:14px;max-width:420px" novalidate>
-      <h3 class="group-title" style="margin-top:0">Your profile</h3>
-      <div style="display:flex;gap:14px;align-items:center"><span id="me-avatar"></span>
-        <div style="display:grid;gap:6px"><label class="btn ghost sm" style="cursor:pointer;justify-self:start">Upload profile photo<input type="file" accept="image/*" id="me-photo" hidden></label>
-        <span class="hint" id="photo-msg">${esc(me.email)} · ${ROLE_LABEL[role]}${myTitle ? " · " + esc(myTitle) : ""}</span></div></div>
+      <h3 class="group-title">Edit your profile</h3>
+      <p class="hint" style="margin:0">Your photo and name show on tasks, chat and the Team page.</p>
+      <label class="btn ghost sm" style="cursor:pointer;justify-self:start">${myPhoto ? "Change" : "Upload"} profile photo<input type="file" accept="image/*" id="me-photo" hidden></label>
+      <span class="hint" id="photo-msg"></span>
       <label class="f" for="me-name"><span>Display name</span><input type="text" id="me-name" maxlength="80" value="${esc(myName)}" placeholder="e.g. Angela" autocomplete="name"></label>
       ${role === "super_admin" ? `<label class="f" for="me-title"><span>Your category</span><input type="text" id="me-title" maxlength="60" list="me-cat-list" value="${esc(myTitle)}" placeholder="e.g. Founder"></label><datalist id="me-cat-list">${["Founder","CEO","Creative Director",...CATEGORIES].map(c => `<option value="${esc(c)}">`).join("")}</datalist>`
-        : `<p class="hint" style="margin:0">Category: ${myTitle ? esc(myTitle) : "not set yet"} <span>(set by a super admin)</span></p>`}
+        : `<p class="hint" style="margin:0">Category: ${myTitle ? esc(myTitle) : "not set yet"} (set by a super admin)</p>`}
       <button class="btn" type="submit" style="justify-self:start">Save profile</button>
       <p class="hint" id="name-msg" role="status" aria-live="polite"></p>
     </form>
-    ${role === "admin" ? `<div><h3 class="group-title">What you can edit</h3><p class="hint">${perms.length ? PERM_LABELS.filter(([k]) => perms.includes(k)).map(([,l]) => l).join(", ") : "Nothing yet. Ask a super admin to give you access."}</p></div>` : ""}
-    <form id="pw-form" style="display:grid;gap:14px;max-width:420px" novalidate>
-      <h3 class="group-title">Change password</h3>
-      <label class="f" for="pw-new"><span>New password (8+ characters)</span><input type="password" id="pw-new" autocomplete="new-password" minlength="8"></label>
-      <button class="btn" type="submit" style="justify-self:start">Update password</button>
-      <p class="hint" id="pw-msg" role="status" aria-live="polite"></p>
-    </form>`;
+    <details class="me-security">
+      <summary>Sign-in &amp; security <span class="hint">(optional)</span></summary>
+      <form id="pw-form" style="display:grid;gap:14px;max-width:420px;margin-top:12px" novalidate>
+        <p class="hint" style="margin:0">You don't need to do anything here. Only change your password if you want a new one.</p>
+        <label class="f" for="pw-new"><span>New password (8+ characters)</span><input type="password" id="pw-new" autocomplete="new-password" minlength="8"></label>
+        <button class="btn ghost" type="submit" style="justify-self:start">Change password</button>
+        <p class="hint" id="pw-msg" role="status" aria-live="polite"></p>
+      </form>
+    </details>`;
 }
 
 /* actions on non-content tabs */
@@ -727,7 +749,7 @@ content.addEventListener("submit", async e => {
   e.preventDefault();
   const name = $("me-name").value.trim().slice(0,80), msg = $("name-msg");
   const upd = {name}; if (role === "super_admin" && $("me-title")) upd.title = $("me-title").value.trim().slice(0,60);
-  try { await db.collection("users").doc(me.uid).update(upd); if ("title" in upd) { myTitle = upd.title; const pm = $("photo-msg"); if (pm) pm.textContent = `${me.email} · ${ROLE_LABEL[role]}${myTitle ? " · " + myTitle : ""}`; $("me-role").textContent = ROLE_LABEL[role] + (myTitle ? " · " + myTitle : ""); } myName = name; paintMe(); msg.textContent = "Profile saved."; msg.className = "hint okc"; }
+  try { await db.collection("users").doc(me.uid).update(upd); if ("title" in upd) { myTitle = upd.title;  $("me-role").textContent = ROLE_LABEL[role] + (myTitle ? " · " + myTitle : ""); } myName = name; paintMe(); msg.textContent = "Profile saved."; msg.className = "hint okc"; }
   catch { msg.textContent = "That didn't save. Please try again."; msg.className = "hint err"; }
 });
 content.addEventListener("change", async e => {
