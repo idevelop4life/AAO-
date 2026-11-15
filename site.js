@@ -14,6 +14,10 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const safeUrl = u => { u = String(u || "").trim(); if (!u) return ""; return /^(https?:|mailto:|\/)/i.test(u) ? u : "https://" + u.replace(/^\/+/, ""); };
 const imgSrc = u => { u = String(u || "").trim(); if (u.startsWith("media:")) return MEDIA[u.slice(6)] || ""; return /^(https?:|\/|data:image\/)/i.test(u) || (/^[\w./-]+$/.test(u) && !u.includes("..")) ? u : ""; };
 const vidSrc = u => { u = String(u || "").trim(); return /^https:\/\//i.test(u) ? u : ""; };
+/* clip helpers: "#t=start,end" makes browsers start and stop at the chosen moments */
+const clipFrag = (o, k = "video") => { const st = +o[k + "Start"] || 0, en = +o[k + "End"] || 0; return st || en ? `#t=${st}${en ? "," + en : ""}` : ""; };
+const clipData = (o, k = "video") => `data-start="${+o[k + "Start"] || 0}" data-end="${+o[k + "End"] || 0}"`;
+const cover = (o, fallback) => imgSrc(o.videoPoster) || imgSrc(fallback);
 const NO_MOTION = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
 const gold = t => esc(t).replace(/\*([^*]+)\*/g, "<em>$1</em>");
 const plain = t => String(t || "").replace(/\*/g, "");
@@ -57,7 +61,7 @@ function render(){
     <p class="kicker">${esc(P.kicker)}</p><h1>${nameHTML(P.name)}</h1>
     <p class="lede">${esc(P.tagline)}</p>
     <ul class="socials" aria-label="Social links">${socialsHTML(true)}</ul></div>
-    ${vidSrc(P.video) ? `<figure class="portrait has-video"><video src="${esc(vidSrc(P.video))}" ${imgSrc(P.photo) ? `poster="${esc(imgSrc(P.photo))}"` : ""} ${NO_MOTION ? "controls" : "autoplay"} muted loop playsinline preload="metadata" aria-label="${esc(P.photoAlt || "Video of " + plain(P.name))}"></video>${NO_MOTION ? "" : `<button class="sound" type="button" data-sound aria-pressed="false">Sound on</button>`}</figure>`
+    ${vidSrc(P.video) ? `<figure class="portrait has-video"><video src="${esc(vidSrc(P.video) + clipFrag(P))}" ${clipData(P)} ${cover(P, P.photo) ? `poster="${esc(cover(P, P.photo))}"` : ""} ${NO_MOTION ? "controls" : "autoplay"} muted loop playsinline preload="metadata" aria-label="${esc(P.photoAlt || "Video of " + plain(P.name))}"></video>${NO_MOTION ? "" : `<button class="sound" type="button" data-sound aria-pressed="false">Sound on</button>`}</figure>`
       : imgSrc(P.photo) ? `<figure class="portrait"><img src="${esc(imgSrc(P.photo))}" alt="${esc(P.photoAlt)}"></figure>` : ""}
   </div></section>`;
 
@@ -84,7 +88,7 @@ function render(){
   if (on.gallery && S.gallery){ const G = S.gallery, pics = arr(G.items).map((g,i) => [g,i]).filter(([g]) => imgSrc(g.src) || vidSrc(g.video));
     h += `<section class="block" id="gallery"><div class="wrap">
     <div class="sec-head"><span class="label">Gallery</span><h2>${esc(G.heading)}</h2></div>
-    ${pics.length ? `<div class="gallery">${pics.map(([g,i]) => `<figure><button type="button" class="ph${vidSrc(g.video) ? " is-video" : ""}" data-photo="${i}" aria-label="${vidSrc(g.video) ? "Play video" : "Open photo"}${g.caption ? ": " + esc(g.caption) : ""}">${imgSrc(g.src) ? `<img src="${esc(imgSrc(g.src))}" alt="${esc(g.caption)}" loading="lazy">` : `<video src="${esc(vidSrc(g.video))}#t=0.1" muted playsinline preload="metadata" aria-hidden="true"></video>`}${vidSrc(g.video) ? `<span class="play" aria-hidden="true"></span>` : ""}</button>${g.caption ? `<figcaption>${esc(g.caption)}</figcaption>` : ""}</figure>`).join("")}</div>`
+    ${pics.length ? `<div class="gallery">${pics.map(([g,i]) => `<figure><button type="button" class="ph${vidSrc(g.video) ? " is-video" : ""}" data-photo="${i}" aria-label="${vidSrc(g.video) ? "Play video" : "Open photo"}${g.caption ? ": " + esc(g.caption) : ""}">${cover(g, g.src) ? `<img src="${esc(cover(g, g.src))}" alt="${esc(g.caption)}" loading="lazy">` : `<video src="${esc(vidSrc(g.video))}#t=${(+g.videoStart || 0) + 0.1}" muted playsinline preload="metadata" aria-hidden="true"></video>`}${vidSrc(g.video) ? `<span class="play" aria-hidden="true"></span>` : ""}</button>${g.caption ? `<figcaption>${esc(g.caption)}</figcaption>` : ""}</figure>`).join("")}</div>`
       : `<p class="hint indent">Photos coming soon.</p>`}
     </div></section>`; }
 
@@ -97,7 +101,7 @@ function render(){
     <div class="feed indent">${items.map(t => `<article class="thought">
       <header>${imgSrc(P.photo) ? `<img class="av" src="${esc(imgSrc(P.photo))}" alt="">` : ""}<p><strong>${esc(who)}</strong> <span class="mut">${esc(handle)} · ${esc(fmtDate(t.date))}</span></p></header>
       <p class="tx">${esc(t.text).replace(/\n/g,"<br>")}</p>
-      ${vidSrc(t.video) ? `<video class="tvid" src="${esc(vidSrc(t.video))}" controls playsinline preload="metadata"></video>` : ""}
+      ${vidSrc(t.video) ? `<video class="tvid" src="${esc(vidSrc(t.video) + clipFrag(t))}" ${clipData(t)} ${cover(t) ? `poster="${esc(cover(t))}"` : ""} controls playsinline preload="metadata"></video>` : ""}
       <div class="acts">${sb ? `<button class="lnk" type="button" data-reply-toggle="${esc(t.id)}">Reply</button>` : ""}${t.xUrl ? `<a href="${esc(safeUrl(t.xUrl))}" target="_blank" rel="noopener">Reply on X →</a>` : ""}<span class="mut" data-count="${esc(t.id)}"></span></div>
       <ul class="replies" data-replies="${esc(t.id)}"></ul>
       ${sb ? `<form class="reply-form" data-reply-form="${esc(t.id)}" hidden>
@@ -154,7 +158,7 @@ function openPost(i){
 function openPhoto(i){
   const g = arr(S.gallery && S.gallery.items)[i]; if (!g) return;
   const media = vidSrc(g.video)
-    ? `<video src="${esc(vidSrc(g.video))}" ${imgSrc(g.src) ? `poster="${esc(imgSrc(g.src))}"` : ""} controls autoplay playsinline></video>`
+    ? `<video src="${esc(vidSrc(g.video) + clipFrag(g))}" ${clipData(g)} ${cover(g, g.src) ? `poster="${esc(cover(g, g.src))}"` : ""} controls autoplay playsinline></video>`
     : `<img src="${esc(imgSrc(g.src))}" alt="${esc(g.caption)}">`;
   document.getElementById("reader-body").innerHTML = `<figure class="lb">${media}${g.caption ? `<figcaption id="reader-title">${esc(g.caption)}</figcaption>` : ""}</figure>`;
   showReader(true);
@@ -254,6 +258,18 @@ if (themeBtn) themeBtn.addEventListener("click", () => {
   syncTheme();
 });
 syncTheme();
+
+/* Keep every video inside its chosen clip: looping ones jump back to the start, others stop at the end. */
+document.addEventListener("timeupdate", e => {
+  const v = e.target; if (v.tagName !== "VIDEO") return;
+  const st = +v.dataset.start || 0, en = +v.dataset.end || 0;
+  if (en && v.currentTime >= en) { if (v.loop) { v.currentTime = st; v.play().catch(() => {}); } else { v.pause(); } }
+}, true);
+document.addEventListener("play", e => {
+  const v = e.target; if (v.tagName !== "VIDEO") return;
+  const st = +v.dataset.start || 0, en = +v.dataset.end || 0;
+  if (v.currentTime < st - 0.2 || (en && v.currentTime >= en - 0.05)) v.currentTime = st;
+}, true);
 
 render();
 

@@ -164,11 +164,58 @@ const fImage = (label, path) => { const src = imgSrc(get(path)); return `<div cl
   <input type="file" accept="image/*" data-upload="${P(path)}" aria-label="Upload ${esc(label)}">${src ? `<button class="btn ghost sm" type="button" data-clear="${P(path)}" style="justify-self:start">Remove photo</button>` : ""}</div></div></div>`; };
 
 const vidSrc = u => { u = String(u || "").trim(); return /^https:\/\//i.test(u) ? u : ""; };
-const fVideo = (label, path) => { const src = vidSrc(get(path)); return `<div class="f"><span>${label}</span><div class="vid-row">${src ? `<video src="${esc(src)}" muted playsinline preload="metadata"></video>` : ""}<div style="display:grid;gap:8px;flex:1;min-width:200px">
-  ${storage ? `<input type="file" accept="video/mp4,video/quicktime,video/webm" data-upload-video="${P(path)}" aria-label="Upload ${esc(label)}">` : `<p class="hint">Video uploads need Firebase Storage turned on.</p>`}
-  <div class="progress" data-progress="${P(path)}" hidden><i></i></div>
-  ${src ? `<button class="btn ghost sm" type="button" data-clear="${P(path)}" style="justify-self:start">Remove video</button>` : ""}</div></div>
-  <p class="hint">MP4 or MOV, up to 200 MB. Shorter clips load faster for visitors.</p></div>`; };
+/* Each video field also keeps a cover photo and a clip (start/end, in seconds) beside it:
+   e.g. "video" -> "videoPoster", "videoStart", "videoEnd" on the same item. */
+const sib = (path, suffix) => [...path.slice(0, -1), path[path.length - 1] + suffix];
+const LOCAL_VID = {};   /* videos uploaded in this visit: their local copy, so any frame can become the cover */
+const fmtSec = s => { s = Math.max(0, +s || 0); const m = Math.floor(s / 60); return `${m}:${(s - m * 60).toFixed(1).padStart(4, "0")}`; };
+const fVideo = (label, path) => {
+  const src = vidSrc(get(path)), poster = imgSrc(get(sib(path, "Poster")));
+  const st = +get(sib(path, "Start")) || 0, en = +get(sib(path, "End")) || 0;
+  const upload = storage ? `<input type="file" accept="video/mp4,video/quicktime,video/webm" data-upload-video="${P(path)}" aria-label="Upload ${esc(label)}">` : `<p class="hint">Video uploads need Firebase Storage turned on.</p>`;
+  if (!src) return `<div class="f"><span>${label}</span><div style="display:grid;gap:8px">${upload}<div class="progress" data-progress="${P(path)}" hidden><i></i></div></div>
+    <p class="hint">MP4 or MOV, up to 200 MB. After uploading you can choose the clip and the cover.</p></div>`;
+  return `<div class="f"><span>${label}</span>
+  <div class="vid-editor" data-vid-editor="${P(path)}">
+    <video src="${esc(LOCAL_VID[src] || src)}" ${poster ? `poster="${esc(poster)}"` : ""} controls playsinline preload="metadata" data-vid-for="${P(path)}"></video>
+    <div class="vid-side">
+      <div class="vid-group"><strong>Clip</strong> <span class="hint">Only this part plays on the website.</span>
+        <label class="rng">Start <input type="range" min="0" max="0" step="0.1" value="${st}" data-clip="Start" data-path-base="${P(path)}"> <output>${fmtSec(st)}</output></label>
+        <label class="rng">End <input type="range" min="0" max="0" step="0.1" value="${en}" data-clip="End" data-path-base="${P(path)}"> <output>${en ? fmtSec(en) : "Full"}</output></label>
+        <div class="row-btns"><button class="btn ghost sm" type="button" data-play-clip="${P(path)}">Play clip</button><button class="btn ghost sm" type="button" data-reset-clip="${P(path)}">Use whole video</button></div>
+      </div>
+      <div class="vid-group"><strong>Cover</strong> <span class="hint">Shown before the video plays.</span>
+        <div class="img-row">${poster ? `<img src="${esc(poster)}" alt="Current cover">` : `<span class="hint">No cover yet.</span>`}
+          <div style="display:grid;gap:6px">
+            <button class="btn ghost sm" type="button" data-grab-frame="${P(path)}">Use this frame as cover</button>
+            <label class="btn ghost sm" style="cursor:pointer">Upload a cover photo<input type="file" accept="image/*" data-upload="${P(sib(path, "Poster"))}" hidden></label>
+            ${poster ? `<button class="btn ghost sm" type="button" data-clear="${P(sib(path, "Poster"))}">Remove cover</button>` : ""}
+          </div></div>
+        <p class="hint">Pause the video on the moment you like, then click "Use this frame as cover".</p>
+      </div>
+      <div class="row-btns">${storage ? `<label class="btn ghost sm" style="cursor:pointer">Replace video<input type="file" accept="video/mp4,video/quicktime,video/webm" data-upload-video="${P(path)}" hidden></label>` : ""}
+        <button class="btn danger sm" type="button" data-clear-video="${P(path)}">Remove video</button></div>
+      <div class="progress" data-progress="${P(path)}" hidden><i></i></div>
+    </div>
+  </div></div>`; };
+
+/* After a tab is drawn: give the clip sliders the video's length. */
+function hydrateVideos(){
+  content.querySelectorAll("video[data-vid-for]").forEach(v => {
+    const ed = v.closest("[data-vid-editor]");
+    const setup = () => {
+      const d = Math.floor((v.duration || 0) * 10) / 10; if (!d || !isFinite(d)) return;
+      const base = JSON.parse(v.dataset.vidFor);
+      const st = Math.min(+get(sib(base, "Start")) || 0, d), en = Math.min(+get(sib(base, "End")) || d, d);
+      ed.querySelectorAll("input[data-clip]").forEach(r => {
+        r.max = d; r.value = r.dataset.clip === "Start" ? st : en;
+        r.nextElementSibling.textContent = r.dataset.clip === "End" && en >= d ? "Full" : fmtSec(r.value);
+      });
+      if (st) v.currentTime = st;
+    };
+    v.readyState >= 1 ? setup() : v.addEventListener("loadedmetadata", setup, {once: true});
+  });
+}
 
 function list(path, title, fields, blank, addLabel, top){
   const a = getArr(path);
@@ -296,7 +343,7 @@ function draw(){
   const isContent = tab in CONTENT_TABS;
   $("savebar").hidden = !isContent;
   $("tab-title").textContent = isContent ? CONTENT_TABS[tab][0] : OTHER_TABS[tab];
-  if (isContent) { $("content").innerHTML = CONTENT_TABS[tab][1](); return; }
+  if (isContent) { $("content").innerHTML = CONTENT_TABS[tab][1](); hydrateVideos(); return; }
   $("content").innerHTML = `<p class="hint">Loading…</p>`;
   ({replies: drawReplies, subscribers: drawSubscribers, users: drawUsers, account: drawAccount})[tab]();
 }
@@ -378,8 +425,11 @@ async function uploadVideo(path, file, input){
     const task = ref.put(file, {contentType: file.type, cacheControl: "public,max-age=31536000"});
     task.on("state_changed", s => { const pct = Math.round(s.bytesTransferred / s.totalBytes * 100); setStatus(`Uploading video… ${pct}%`); if (bar) bar.firstElementChild.style.width = pct + "%"; });
     await task;
-    set(path, await ref.getDownloadURL());
-    markDirty(); draw(); setStatus("Video uploaded. Click Save & publish to put it on the website.");
+    const url = await ref.getDownloadURL();
+    set(path, url); set(sib(path, "Start"), 0); set(sib(path, "End"), 0);
+    LOCAL_VID[url] = URL.createObjectURL(file);
+    try { const cover = await frameFromVideo(LOCAL_VID[url], 1); await saveCover(path, cover); } catch {}
+    markDirty(); draw(); setStatus("Video uploaded with a cover from its first second. Adjust the clip or cover, then click Save & publish.");
   } catch (err) {
     input.disabled = false; if (bar) bar.hidden = true;
     const c = err && err.code || "";
@@ -389,6 +439,65 @@ async function uploadVideo(path, file, input){
               "The video didn't upload. Check your connection and try again.", "err");
   }
 }
+
+/* Grab one frame from a video as a compressed image (works for videos uploaded in this visit). */
+function frameFromVideo(src, time){
+  return new Promise((resolve, reject) => {
+    const v = document.createElement("video"); v.muted = true; v.playsInline = true; v.preload = "auto";
+    if (!src.startsWith("blob:")) v.crossOrigin = "anonymous";
+    const fail = () => reject(new Error("frame")); const timer = setTimeout(fail, 15000);
+    v.addEventListener("error", () => { clearTimeout(timer); fail(); }, {once: true});
+    v.addEventListener("loadedmetadata", () => { v.currentTime = Math.min(Math.max(time, 0), Math.max((v.duration || 1) - 0.1, 0)); }, {once: true});
+    v.addEventListener("seeked", () => {
+      try {
+        const max = 1600, sc = Math.min(1, max / Math.max(v.videoWidth, v.videoHeight));
+        const c = document.createElement("canvas"); c.width = Math.round(v.videoWidth * sc); c.height = Math.round(v.videoHeight * sc);
+        c.getContext("2d").drawImage(v, 0, 0, c.width, c.height);
+        let out = c.toDataURL("image/webp", 0.82); if (!out.startsWith("data:image/webp")) out = c.toDataURL("image/jpeg", 0.82);
+        clearTimeout(timer); resolve(out);
+      } catch { clearTimeout(timer); fail(); }
+    }, {once: true});
+    v.src = src;
+  });
+}
+async function saveCover(path, data){
+  const ref = await db.collection("media").add({data, name: "video-cover", createdAt: TS()});
+  MEDIA[ref.id] = data; set(sib(path, "Poster"), "media:" + ref.id);
+}
+content.addEventListener("input", e => {
+  const r = e.target.closest("input[data-clip]"); if (!r) return;
+  const base = JSON.parse(r.dataset.pathBase), ed = r.closest("[data-vid-editor]");
+  const [s, en] = ["Start", "End"].map(k => ed.querySelector(`input[data-clip="${k}"]`));
+  if (+s.value > +en.value - 0.5) { if (r === s) s.value = Math.max(0, +en.value - 0.5); else en.value = Math.min(+en.max, +s.value + 0.5); }
+  const full = +en.value >= +en.max;
+  set(sib(base, "Start"), +s.value); set(sib(base, "End"), full ? 0 : +en.value);
+  s.nextElementSibling.textContent = fmtSec(s.value); en.nextElementSibling.textContent = full ? "Full" : fmtSec(en.value);
+  const v = ed.querySelector("video"); v.pause(); v.currentTime = +r.value;
+  markDirty();
+});
+let clipStop = null;
+content.addEventListener("click", async e => {
+  const play = e.target.closest("[data-play-clip]"), reset = e.target.closest("[data-reset-clip]"), grab = e.target.closest("[data-grab-frame]"), rm = e.target.closest("[data-clear-video]");
+  if (play) {
+    const base = JSON.parse(play.dataset.playClip), v = play.closest("[data-vid-editor]").querySelector("video");
+    const st = +get(sib(base, "Start")) || 0, en = +get(sib(base, "End")) || v.duration;
+    if (clipStop) v.removeEventListener("timeupdate", clipStop);
+    clipStop = () => { if (v.currentTime >= en) { v.pause(); v.removeEventListener("timeupdate", clipStop); } };
+    v.addEventListener("timeupdate", clipStop); v.currentTime = st; v.play().catch(() => {});
+  }
+  if (reset) { const base = JSON.parse(reset.dataset.resetClip); set(sib(base, "Start"), 0); set(sib(base, "End"), 0); markDirty(); draw(); }
+  if (rm) {
+    if (!rm.dataset.confirm) { rm.dataset.confirm = "1"; rm.textContent = "Click again to remove"; return; }
+    const base = JSON.parse(rm.dataset.clearVideo); for (const k of ["", "Poster", "Start", "End"]) set(k ? sib(base, k) : base, k === "Start" || k === "End" ? 0 : "");
+    markDirty(); draw();
+  }
+  if (grab) {
+    const base = JSON.parse(grab.dataset.grabFrame), v = grab.closest("[data-vid-editor]").querySelector("video"), src = vidSrc(get(base));
+    grab.disabled = true; setStatus("Saving this frame as the cover…");
+    try { await saveCover(base, await frameFromVideo(LOCAL_VID[src] || src, v.currentTime)); markDirty(); draw(); setStatus(`Cover set from ${fmtSec(v.currentTime)}. Click Save & publish to put it on the website.`); }
+    catch { grab.disabled = false; setStatus("This video's frames can't be captured here (it was uploaded earlier). Use \"Upload a cover photo\" instead, or re-upload the video to pick any frame.", "err"); }
+  }
+});
 
 $("save").addEventListener("click", async () => {
   if (saving) return; saving = true; $("save").disabled = true; setStatus("Publishing…");
