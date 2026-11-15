@@ -17,7 +17,7 @@ const TYPES = ["Content", "Video", "Design", "Social", "Website", "Admin", "Othe
 
 let PEOPLE = {}, TASKS = [], CHANNELS = [], NOTES = [], EVENTS = [], DOCS = [];
 let subs = [], viewSubs = [], current = null;
-let pendingChannel = null;
+let pendingChannel = null, pendingEvent = null;
 let taskFilter = "all", openChannel = null, calMonth = (d => new Date(d.getFullYear(), d.getMonth(), 1))(new Date()), docFolder = "All";
 
 /* ---------- helpers ---------- */
@@ -80,6 +80,7 @@ function refresh(k){
     if (pendingChannel && CHANNELS.find(c => c.id === pendingChannel)) { const id = pendingChannel; pendingChannel = null; openThread(id); return; }
     drawChatList(); return;
   }
+  if (current === "ws_calendar" && pendingEvent && EVENTS.find(e => e.id === pendingEvent)) { const id = pendingEvent; pendingEvent = null; draw(current); openEvent(id, true); return; }
   if (document.querySelector("#content :focus")) return;          /* don't interrupt typing */
   draw(current);
 }
@@ -330,13 +331,13 @@ function eventForm(ev = {}){
       <label class="f"><span>End</span><input type="time" name="end" value="${esc(ev.end || "11:00")}"></label>
     </div>
     <label class="f"><span>Details</span><textarea name="desc" maxlength="2000" placeholder="Agenda, meeting link…">${esc(ev.desc || "")}</textarea></label>
-    <fieldset class="perm-box"><legend>Who's invited</legend><div class="perm-grid">${members().map(id => `<label class="f check"><input type="checkbox" name="att" value="${esc(id)}" ${(ev.attendees || [uid()]).includes(id) ? "checked" : ""}><span>${esc(pname(id))}</span></label>`).join("")}</div></fieldset>
+    <fieldset class="perm-box"><legend>Who's invited</legend><div class="invite-list">${members().map(id => `<label class="inv"><input type="checkbox" name="att" value="${esc(id)}" ${(ev.attendees || [uid()]).includes(id) ? "checked" : ""}>${avatar(id, 28)}<span class="inv-t"><strong>${esc(pname(id))}</strong>${person(id).name && person(id).email ? `<span class="hint">${esc(person(id).email)}</span>` : ""}</span></label>`).join("")}</div></fieldset>
     <div class="row-btns"><button class="btn" type="submit">${ev.id ? "Save event" : "Create event"}</button><button class="btn ghost" type="button" data-close-modal>Cancel</button></div></form>`;
 }
-function openEvent(id){
+function openEvent(id, justCreated){
   const ev = EVENTS.find(e => e.id === id); if (!ev) return;
   const mine = isSuper() || ev.createdBy === uid();
-  modal(`<p class="hint" style="margin:0">Created by ${esc(pname(ev.createdBy))}</p>
+  modal(`${justCreated ? `<div class="notice"><strong>Event created.</strong> <span class="hint">Click "Add to Google Calendar" below so it shows on your phone.</span></div>` : ""}<p class="hint" style="margin:0">Created by ${esc(pname(ev.createdBy))}</p>
     ${mine ? eventForm(ev) : `<h3 class="group-title">${esc(ev.title)}</h3><p>${esc(fmtDay(ev.date))} ${ev.allDay ? "· all day" : `· ${esc(ev.start || "")}–${esc(ev.end || "")}`}</p><p>${esc(ev.desc || "")}</p>`}
     <div class="row-btns"><a class="btn sm" href="${esc(gcalLink(ev))}" target="_blank" rel="noopener">Add to Google Calendar</a><a class="btn ghost sm" href="${icsFile(ev)}" download="${esc((ev.title || "event").replace(/[^\w ]+/g, "")).slice(0, 40)}.ics">Download .ics</a>
       ${mine ? `<button class="btn danger sm" type="button" data-del-event="${esc(ev.id)}">Delete</button>` : ""}</div>
@@ -351,7 +352,9 @@ async function saveEvent(form){
     if (id) await db.collection("events").doc(id).update(data);
     else evId = (await db.collection("events").add({...data, createdBy: uid(), createdAt: TS()})).id;
     data.attendees.forEach(p => notify(p, `${A.myName || "Someone"} ${id ? "updated" : "invited you to"} "${data.title}" on ${fmtDay(data.date)}`, {tab: "ws_calendar", event: evId}));
-    closeModal(); msg(id ? "Event saved." : "Event created. Open it to add it to Google Calendar.");
+    closeModal();
+    if (id) msg("Event saved.");
+    else { msg("Event created. Add it to your Google Calendar so your phone reminds you."); if (EVENTS.find(e => e.id === evId)) openEvent(evId, true); else pendingEvent = evId; }
   } catch { msg("That event didn't save. Check your Calendar access.", true); }
 }
 

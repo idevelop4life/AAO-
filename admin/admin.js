@@ -134,7 +134,7 @@ async function boot(user){
   let snap, data;
   try { snap = await db.doc("site/content").get(); data = snap.exists ? snap.data().data : await seedContent(); }
   catch { data = null; }
-  $("me-email").textContent = myName ? `${myName} · ${user.email}` : user.email; $("me-role").textContent = ROLE_LABEL[role];
+  paintMe(); $("me-role").textContent = ROLE_LABEL[role] + (myTitle ? " · " + myTitle : "");
   show("v-app");
   if (!data) { $("savebar").hidden = true; $("content").innerHTML = `<div class="notice">The website content couldn't be loaded. Check that Firestore is set up and the rules are published, then reload.</div>`; return; }
   await loadMedia(data);
@@ -340,13 +340,13 @@ const CONTENT_TABS = {
     ${[["about","About"],["building","Building"],["interests","Interests"],["gallery","Gallery"],["thoughts","Thoughts"],["quote","Quote"],["journal","Journal"],["subscribe","Subscribe"]].map(([k,l]) => fCheck(l, ["sections",k])).join("")}`]
 };
 const OTHER_TABS = {
-  replies: "Replies", subscribers: "Subscribers", users: "Users & access", account: "My account"
+  replies: "Replies", subscribers: "Subscribers", users: "Users & access", account: "My profile"
 };
 
 function drawNav(){
   const c = Object.entries(CONTENT_TABS).filter(([k]) => can(k)).map(([k,[l]]) => btn(k,l)).join("");
   const a = (can("replies") ? btn("replies", "Replies") : "") + (can("subscribers") ? btn("subscribers", "Subscribers") : "");
-  const s = (role === "super_admin" ? btn("users", `Users &amp; access <span id="pending-badge"></span>`) : "") + btn("account", "My account");
+  const s = (role === "super_admin" ? btn("users", `Users &amp; access <span id="pending-badge"></span>`) : "") + btn("account", "My profile");
   const w = window.WS ? Object.entries(WS.tabs).filter(([k]) => can(k)).map(([k, l]) => btn(k, `${l} <span class="nav-badge" data-badge="${k}"></span>`)).join("") : "";
   $("tabs").innerHTML = (w ? `<span class="grp">Workspace</span>${w}` : "") + (c ? `<span class="grp">Website</span>${c}` : "") + (a ? `<span class="grp">Audience</span>${a}` : "") + `<span class="grp">Access</span>${s}`;
   if (window.WS) WS.badges();
@@ -658,6 +658,12 @@ async function refreshPendingCount(){
   } catch {}
 }
 /* ---------------- account ---------------- */
+function paintMe(){
+  const el = $("me-email"); if (!el || !me) return;
+  el.innerHTML = `<button type="button" class="me-link" data-open-profile>${avatarHTML({name: myName, email: me.email, photo: myPhoto}, 36)}<span><strong>${esc(myName || "Add your name")}</strong><span class="hint" style="display:block">${esc(me.email)}</span></span></button>`;
+  if (myPhoto) loadMedia({p: myPhoto}).then(() => { const i = el.querySelector("img"); if (i) i.src = imgSrc(myPhoto); });
+}
+document.addEventListener("click", e => { if (e.target.closest("[data-open-profile]")) { $("side").classList.remove("open"); window.__ADMIN.goto("account"); } });
 function drawAccount(){
   setTimeout(() => { const s = $("me-avatar"); if (s) { s.innerHTML = avatarHTML({name: myName, email: me.email, photo: myPhoto}, 64); loadMedia({p: myPhoto}).then(() => { const i = s.querySelector("img"); if (i) i.src = imgSrc(myPhoto); }); } }, 0);
   content.innerHTML = `
@@ -667,6 +673,8 @@ function drawAccount(){
         <div style="display:grid;gap:6px"><label class="btn ghost sm" style="cursor:pointer;justify-self:start">Upload profile photo<input type="file" accept="image/*" id="me-photo" hidden></label>
         <span class="hint" id="photo-msg">${esc(me.email)} · ${ROLE_LABEL[role]}${myTitle ? " · " + esc(myTitle) : ""}</span></div></div>
       <label class="f" for="me-name"><span>Display name</span><input type="text" id="me-name" maxlength="80" value="${esc(myName)}" placeholder="e.g. Angela" autocomplete="name"></label>
+      ${role === "super_admin" ? `<label class="f" for="me-title"><span>Your category</span><input type="text" id="me-title" maxlength="60" list="me-cat-list" value="${esc(myTitle)}" placeholder="e.g. Founder"></label><datalist id="me-cat-list">${["Founder","CEO","Creative Director",...CATEGORIES].map(c => `<option value="${esc(c)}">`).join("")}</datalist>`
+        : `<p class="hint" style="margin:0">Category: ${myTitle ? esc(myTitle) : "not set yet"} <span>(set by a super admin)</span></p>`}
       <button class="btn" type="submit" style="justify-self:start">Save profile</button>
       <p class="hint" id="name-msg" role="status" aria-live="polite"></p>
     </form>
@@ -711,14 +719,15 @@ content.addEventListener("change", async e => {
     const ref = await db.collection("media").add({data, name: "profile-photo", createdAt: TS()});
     MEDIA[ref.id] = data; myPhoto = "media:" + ref.id;
     await db.collection("users").doc(me.uid).update({photo: myPhoto});
-    msg.textContent = "Profile photo saved."; drawAccount();
+    msg.textContent = "Profile photo saved."; paintMe(); drawAccount();
   } catch { msg.textContent = "The photo didn't save. Make sure the latest database rules are published."; }
 });
 content.addEventListener("submit", async e => {
   if (e.target.id !== "name-form") return;
   e.preventDefault();
   const name = $("me-name").value.trim().slice(0,80), msg = $("name-msg");
-  try { await db.collection("users").doc(me.uid).update({name}); myName = name; $("me-email").textContent = name ? `${name} · ${me.email}` : me.email; msg.textContent = "Profile saved."; msg.className = "hint okc"; }
+  const upd = {name}; if (role === "super_admin" && $("me-title")) upd.title = $("me-title").value.trim().slice(0,60);
+  try { await db.collection("users").doc(me.uid).update(upd); if ("title" in upd) { myTitle = upd.title; const pm = $("photo-msg"); if (pm) pm.textContent = `${me.email} · ${ROLE_LABEL[role]}${myTitle ? " · " + myTitle : ""}`; $("me-role").textContent = ROLE_LABEL[role] + (myTitle ? " · " + myTitle : ""); } myName = name; paintMe(); msg.textContent = "Profile saved."; msg.className = "hint okc"; }
   catch { msg.textContent = "That didn't save. Please try again."; msg.className = "hint err"; }
 });
 content.addEventListener("change", async e => {
