@@ -8,7 +8,7 @@ const show = v => VIEWS.forEach(x => $(x).hidden = x !== v);
 /* Light / dark mode switch, remembered on this device. */
 function syncTheme(){
   const light = document.documentElement.dataset.theme === "light";
-  document.querySelectorAll("[data-theme-toggle]").forEach(b => { b.textContent = light ? "Dark mode" : "Light mode"; b.setAttribute("aria-pressed", String(light)); });
+  document.querySelectorAll("[data-theme-toggle]").forEach(b => { b.textContent = light ? "Dark mode" : "Gold mode"; b.setAttribute("aria-pressed", String(light)); });
 }
 document.addEventListener("click", e => {
   if (!e.target.closest("[data-theme-toggle]")) return;

@@ -244,7 +244,7 @@ function syncTheme(){
   if (!themeBtn) return;
   const light = document.documentElement.dataset.theme === "light";
   themeBtn.innerHTML = light ? MOON : SUN;
-  const label = light ? "Switch to dark mode" : "Switch to light mode";
+  const label = light ? "Switch to dark mode" : "Switch to gold mode";
   themeBtn.setAttribute("aria-label", label); themeBtn.title = label; themeBtn.setAttribute("aria-pressed", String(light));
 }
 if (themeBtn) themeBtn.addEventListener("click", () => {
