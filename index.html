@@ -19,9 +19,22 @@
   --text:#f2ece0;
   --muted:#a59d8e;
   --danger:#e07a6a;
+  --bar:rgba(11,10,8,.88);
+  --overlay:rgba(5,5,4,.92);
+  --scrim:rgba(11,10,8,.7);
+  --gold-hover:#e2c274;
+  --on-gold:#0b0a08;
   --display:"Bodoni Moda", "Didot", "Bodoni 72", Georgia, serif;
   --body:"Manrope", "Helvetica Neue", Arial, sans-serif;
   color-scheme: dark;
+}
+/* Light ("bright") mode, chosen with the switch in the top bar. */
+:root[data-theme="light"]{
+  --ink:#f7f3ea; --panel:#efe8da; --line:#ddd3bf; --gold:#86651c; --gold-soft:#9c7d3c;
+  --text:#1d1a14; --muted:#5f584a; --danger:#b03a28;
+  --bar:rgba(247,243,234,.9); --overlay:rgba(247,243,234,.96); --scrim:rgba(247,243,234,.8);
+  --gold-hover:#6e5316; --on-gold:#ffffff;
+  color-scheme:light;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -35,7 +48,7 @@ h1,h2,h3{font-family:var(--display);font-weight:500;line-height:1.1;text-wrap:ba
 [hidden]{display:none!important}
 
 /* nav */
-header.top{position:sticky;top:0;z-index:10;background:rgba(11,10,8,.88);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+header.top{position:sticky;top:0;z-index:10;background:var(--bar);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
 header.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:24px;height:64px}
 .mark{font-family:var(--display);font-size:22px;letter-spacing:.08em;color:var(--gold)}
 .mark:hover{text-decoration:none}
@@ -166,7 +179,7 @@ a.btn:hover{text-decoration:none}
 @media (max-width:900px){.posts{grid-template-columns:1fr}}
 
 /* reader */
-.reader{position:fixed;inset:0;z-index:40;background:rgba(5,5,4,.92);overflow-y:auto;padding:clamp(24px,6vw,72px) 16px}
+.reader{position:fixed;inset:0;z-index:40;background:var(--overlay);overflow-y:auto;padding:clamp(24px,6vw,72px) 16px}
 .reader article{max-width:680px;margin:0 auto}
 .reader .meta{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold-soft)}
 .reader h2{font-size:clamp(34px,5vw,54px);margin:14px 0 32px}
@@ -189,8 +202,8 @@ form.signup legend{font-size:13px;letter-spacing:.12em;text-transform:uppercase;
 .freq input{position:absolute;opacity:0;pointer-events:none}
 .freq input:checked + label{border-color:var(--gold);background:rgba(212,175,90,.06)}
 .freq input:focus-visible + label{outline:2px solid var(--gold);outline-offset:2px}
-.btn{background:var(--gold);color:var(--ink);border:0;padding:14px 20px;font:inherit;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:13px;cursor:pointer;border-radius:2px;transition:background .2s}
-.btn:hover{background:#e2c274}
+.btn{background:var(--gold);color:var(--on-gold);border:0;padding:14px 20px;font:inherit;font-weight:700;letter-spacing:.12em;text-transform:uppercase;font-size:13px;cursor:pointer;border-radius:2px;transition:background .2s}
+.btn:hover{background:var(--gold-hover)}
 .btn:disabled{opacity:.6;cursor:default}
 .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
 .btn.ghost:hover{border-color:var(--gold);color:var(--gold)}
@@ -207,22 +220,30 @@ footer .socials a{padding:8px 12px}
 
 /* video */
 .portrait video{display:block;width:100%;height:100%;object-fit:cover;background:#000}
-.portrait .sound{position:absolute;right:24px;bottom:24px;background:rgba(11,10,8,.75);color:var(--text);border:1px solid var(--gold-soft);padding:7px 12px;font:inherit;font-size:12px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;border-radius:2px;backdrop-filter:blur(4px)}
+.portrait .sound{position:absolute;right:24px;bottom:24px;background:var(--scrim);color:var(--text);border:1px solid var(--gold-soft);padding:7px 12px;font:inherit;font-size:12px;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;border-radius:2px;backdrop-filter:blur(4px)}
 .portrait .sound:hover{color:var(--gold);border-color:var(--gold)}
 .gallery .ph{position:relative}
 .gallery .ph video{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border:1px solid var(--line);background:#000}
-.gallery .play{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:rgba(11,10,8,.65);border:1px solid var(--gold)}
+.gallery .play{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:var(--scrim);border:1px solid var(--gold)}
 .gallery .play::after{content:"";position:absolute;left:23px;top:18px;border-style:solid;border-width:11px 0 11px 17px;border-color:transparent transparent transparent var(--gold)}
 .lb video{display:block;max-width:100%;max-height:82vh;margin:0 auto;background:#000}
 .thought .tvid{display:block;width:100%;max-height:540px;background:#000;border:1px solid var(--line);margin:0 0 12px}
+.theme-btn{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border:1px solid var(--line);border-radius:50%;background:none;color:var(--muted);cursor:pointer;flex:none}
+.theme-btn:hover{color:var(--gold);border-color:var(--gold)}
+.theme-btn svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+header.top .right{display:flex;align-items:center;gap:clamp(14px,2.4vw,28px)}
 </style>
+<script>try { if (localStorage.getItem("site-theme") === "light") document.documentElement.dataset.theme = "light"; } catch {}</script>
 </head>
 <body>
 
 <header class="top">
   <div class="wrap">
     <a class="mark" href="#top" aria-label="Back to top">A·A·O</a>
-    <nav aria-label="Main"><ul id="nav"></ul></nav>
+    <div class="right">
+      <nav aria-label="Main"><ul id="nav"></ul></nav>
+      <button class="theme-btn" type="button" id="theme-btn" aria-pressed="false" aria-label="Switch to light mode" title="Switch to light mode"></button>
+    </div>
   </div>
 </header>
 
