@@ -46,3 +46,18 @@ Videos (MP4/MOV up to 200 MB) upload to Firebase Storage, which needs the Blaze 
 Sign in at **/admin**. Changes preview in the form; click **Save & publish** and the live site shows them immediately (no redeploy needed). Wrap a word in `*asterisks*` to make it gold.
 
 `index.html` also carries a copy of the content, used only if the database can't be reached.
+
+## Workspace
+
+Inside the admin: **Tasks** (board), **Chat** (direct + groups), **Calendar** (with Add to Google Calendar), **Documents**, **Team**, and a notification bell. Super admins give each person workspace access under *Users & access* (Tasks, Assign tasks to others, Chat, Calendar, Documents) and set their category.
+
+### Email notifications (Gmail)
+
+`api/notify.js` runs on Vercel and emails people when they get a task, comment, status change or invite. To switch it on, add these in **Vercel → Project → Settings → Environment Variables**, then redeploy:
+
+| Name | Value |
+|---|---|
+| `GMAIL_USER` | the Gmail address emails come from |
+| `GMAIL_APP_PASSWORD` | a 16-character Gmail app password (Google Account → Security → App passwords; needs 2-Step Verification) |
+
+Never put the app password in the code.

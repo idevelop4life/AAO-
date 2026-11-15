@@ -41,6 +41,14 @@ function msg(t, err){ A.setStatus(t, err ? "err" : ""); const n = $("ws-note"); 
 async function notify(to, text, link){
   if (!to || to === uid()) return;
   try { await db.collection("notifications").doc(to).collection("items").add({text, link: link || null, from: uid(), read: false, createdAt: TS()}); } catch {}
+  emailNotify(to, text);
+}
+/* Also email them (Gmail, via /api/notify). Quietly does nothing until email is set up in Vercel. */
+async function emailNotify(to, text){
+  try {
+    const token = await A.auth.currentUser.getIdToken();
+    await fetch("/api/notify", {method: "POST", headers: {"Content-Type": "application/json", Authorization: "Bearer " + token}, body: JSON.stringify({to, text})});
+  } catch {}
 }
 async function resolvePhotos(){
   const ids = Object.values(PEOPLE).map(p => p.photo).filter(p => p && p.startsWith("media:") && !(p.slice(6) in MEDIA));

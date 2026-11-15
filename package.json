@@ -1,0 +1,9 @@
+{
+  "name": "agunwami-website",
+  "private": true,
+  "description": "Angela Agunwami Onwuka's website and workspace. Static site plus one serverless function (api/notify.js) for Workspace emails.",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "nodemailer": "6.9.14"
+  }
+}
