@@ -149,9 +149,10 @@ service cloud.firestore {
       }
     }
 
-    // Chat: only the people in a conversation can read it or post in it.
+    // Chat: only the people in a conversation can post in it. Members and super admins can read it.
     match /channels/{cid} {
-      allow read: if signedIn() && (resource == null || request.auth.uid in resource.data.members);
+      // Super admins can read every conversation, including private ones. Only members can post.
+      allow read: if isSuper() || (signedIn() && (resource == null || request.auth.uid in resource.data.members));
       allow create: if canDo('ws_chat') && request.auth.uid in request.resource.data.members
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.members.size() >= 2 && request.resource.data.members.size() <= 50
@@ -166,7 +167,7 @@ service cloud.firestore {
       allow delete: if isSuper();
 
       match /messages/{mid} {
-        allow read: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/channels/$(cid)).data.members;
+        allow read: if isSuper() || (signedIn() && request.auth.uid in get(/databases/$(database)/documents/channels/$(cid)).data.members);
         allow create: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/channels/$(cid)).data.members
           && request.resource.data.from == request.auth.uid
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 4000;

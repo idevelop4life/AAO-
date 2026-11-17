@@ -71,7 +71,8 @@ function start(){
   subs.push(db.collection("users").onSnapshot(s => { PEOPLE = {}; s.docs.forEach(d => PEOPLE[d.id] = d.data()); resolvePhotos(); drawBubble(); refresh(); }, () => {}));
   subs.push(db.collection("notifications").doc(uid()).collection("items").orderBy("createdAt", "desc").limit(40)
     .onSnapshot(s => { NOTES = s.docs.map(d => ({id: d.id, ...d.data()})); bell(); }, () => {}));
-  if (canWS("ws_chat")) subs.push(db.collection("channels").where("members", "array-contains", uid())
+  /* Super admins see every conversation (including other people's private chats); everyone else only their own. */
+  if (canWS("ws_chat")) subs.push((isSuper() ? db.collection("channels") : db.collection("channels").where("members", "array-contains", uid()))
     .onSnapshot(s => { CHANNELS = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => (toDate(b.lastAt) || 0) - (toDate(a.lastAt) || 0)); badges(); refresh("ws_chat"); }, () => {}));
   if (canWS("ws_tasks")) subs.push(db.collection("tasks").orderBy("createdAt", "desc").limit(500)
     .onSnapshot(s => { TASKS = s.docs.map(d => ({id: d.id, ...d.data()})); badges(); refresh("ws_tasks"); refresh("ws_calendar"); }, () => {}));
@@ -142,7 +143,8 @@ function refresh(k){
 }
 
 /* ---------- badges + bell ---------- */
-const unreadChannels = () => CHANNELS.filter(c => c.lastAt && c.lastFrom !== uid() && (!c.reads || !c.reads[uid()] || toDate(c.reads[uid()]) < toDate(c.lastAt))).length;
+const inChat = c => (c.members || []).includes(uid());
+const unreadChannels = () => CHANNELS.filter(c => inChat(c) && c.lastAt && c.lastFrom !== uid() && (!c.reads || !c.reads[uid()] || toDate(c.reads[uid()]) < toDate(c.lastAt))).length;
 /* Task rules: only the person who created a task edits or reassigns it. The person it's assigned to can
    move it along (change its status) and comment. Everyone else with Tasks access can comment. */
 const EMOJI = [
@@ -334,7 +336,7 @@ content.addEventListener("dragleave", e => { const col = e.target.closest("[data
 content.addEventListener("drop", e => { const col = e.target.closest("[data-col]"); if (!col) return; e.preventDefault(); col.classList.remove("over"); moveTask(e.dataTransfer.getData("text/plain"), col.dataset.col); });
 
 /* ===== CHAT ===== */
-function chName(c){ return c.type === "group" ? c.name || "Group" : pname(c.members.find(m => m !== uid()) || uid()); }
+function chName(c){ return c.type === "group" ? c.name || "Group" : inChat(c) ? pname(c.members.find(m => m !== uid()) || uid()) : c.members.map(pname).join(" & "); }
 function chAvatar(c, size){ return c.type === "group" ? `<span class="avatar ini grp" style="width:${size}px;height:${size}px;font-size:${Math.round(size * .4)}px">#</span>` : avatar(c.members.find(m => m !== uid()) || uid(), size); }
 function drawChat(open){
   if (open && open.channel) openChannel = open.channel;
@@ -347,9 +349,12 @@ function drawChat(open){
 }
 function drawChatList(){
   const box = $("chat-items"); if (!box) return;
-  box.innerHTML = CHANNELS.map(c => { const unread = c.lastAt && c.lastFrom !== uid() && (!c.reads || !c.reads[uid()] || toDate(c.reads[uid()]) < toDate(c.lastAt));
+  const item = c => { const unread = inChat(c) && c.lastAt && c.lastFrom !== uid() && (!c.reads || !c.reads[uid()] || toDate(c.reads[uid()]) < toDate(c.lastAt));
     return `<button class="chat-item${c.id === openChannel ? " active" : ""}${unread ? " unread" : ""}" type="button" data-channel="${esc(c.id)}">${chAvatar(c, 38)}
-      <span class="ci-text"><strong>${esc(chName(c))}</strong><span class="hint">${esc((c.lastFrom === uid() ? "You: " : "") + (c.lastMessage || "No messages yet"))}</span></span>${unread ? `<span class="dot"></span>` : ""}</button>`; }).join("") || `<p class="hint" style="padding:12px">No conversations yet.</p>`;
+      <span class="ci-text"><strong>${esc(chName(c))}</strong><span class="hint">${esc((c.lastFrom === uid() ? "You: " : "") + (c.lastMessage || "No messages yet"))}</span></span>${unread ? `<span class="dot"></span>` : ""}</button>`; };
+  const mine = CHANNELS.filter(inChat), others = CHANNELS.filter(c => !inChat(c));
+  box.innerHTML = (mine.map(item).join("") || `<p class="hint" style="padding:12px">No conversations yet.</p>`)
+    + (others.length ? `<p class="chat-sec">Team chats <span class="hint">· view only</span></p>${others.map(item).join("")}` : "");
 }
 function openThread(id){
   openChannel = id; const c = CHANNELS.find(x => x.id === id); if (!c) return;
@@ -358,20 +363,21 @@ function openThread(id){
   const th = $("chat-thread");
   th.innerHTML = `<header class="th-head"><button class="btn ghost sm th-back" type="button" data-chat-back>← Back</button>${chAvatar(c, 34)}<div><strong>${esc(chName(c))}</strong><div class="hint">${c.type === "group" ? esc(c.members.map(pname).join(", ")) : (o => esc([stateLabel(o), person(o).statusText && stateOf(o) !== "offline" ? person(o).statusText : "", person(o).title].filter(Boolean).join(" · ")))(c.members.find(m => m !== uid()))}</div></div>
       ${c.type === "group" ? `<button class="btn ghost sm" type="button" data-group-edit="${esc(c.id)}" style="margin-left:auto">Members</button>` : ""}</header>
+    ${inChat(c) ? "" : `<p class="notice" style="margin:8px 12px">You're viewing this chat as a super admin. Only the people in it can send messages.</p>`}
     <div class="msgs" id="msgs"><p class="hint">Loading…</p></div>
-    <form class="send" data-send="${esc(id)}"><div class="emoji-wrap"><button class="emoji-btn" type="button" data-emoji-toggle aria-label="Add emoji" aria-expanded="false">😊</button>
+    ${inChat(c) ? "" : "<!--"}<form class="send" data-send="${esc(id)}"><div class="emoji-wrap"><button class="emoji-btn" type="button" data-emoji-toggle aria-label="Add emoji" aria-expanded="false">😊</button>
       <div class="emoji-pop" hidden role="dialog" aria-label="Emoji">${EMOJI.map(([g, list]) => `<p class="hint">${g}</p><div class="emoji-grid">${[...list].filter(c => c.trim()).map(c => `<button type="button" data-emoji="${c}">${c}</button>`).join("")}</div>`).join("")}</div></div>
-      <textarea name="text" maxlength="4000" placeholder="Write a message…" rows="1" required></textarea><button class="btn sm" type="submit">Send</button></form>`;
+      <textarea name="text" maxlength="4000" placeholder="Write a message…" rows="1" required></textarea><button class="btn sm" type="submit">Send</button></form>${inChat(c) ? "" : "-->"}`;
   viewSubs.forEach(u => u()); viewSubs = [];
   viewSubs.push(db.collection("channels").doc(id).collection("messages").orderBy("at").limitToLast(200).onSnapshot(s => {
     const box = $("msgs"); if (!box) return;
     let last = null;
     box.innerHTML = s.docs.map(d => { const m = d.data(), mine = m.from === uid(), showWho = m.from !== last; last = m.from;
-      return `<div class="msg${mine ? " mine" : ""}">${!mine && showWho ? avatar(m.from, 28) : `<span style="width:28px;flex:none"></span>`}<div class="bubble">${!mine && showWho && c.type === "group" ? `<span class="who">${esc(pname(m.from))}</span>` : ""}${esc(m.text).replace(/\n/g, "<br>")}<span class="t">${esc(when(m.at))}</span></div></div>`; }).join("") || `<p class="hint">Say hello 👋</p>`;
+      return `<div class="msg${mine ? " mine" : ""}">${!mine && showWho ? avatar(m.from, 28) : `<span style="width:28px;flex:none"></span>`}<div class="bubble">${!mine && showWho && (c.type === "group" || !inChat(c)) ? `<span class="who">${esc(pname(m.from))}</span>` : ""}${esc(m.text).replace(/\n/g, "<br>")}<span class="t">${esc(when(m.at))}</span></div></div>`; }).join("") || `<p class="hint">Say hello 👋</p>`;
     box.scrollTop = box.scrollHeight;
-    db.collection("channels").doc(id).update({["reads." + uid()]: TS()}).catch(() => {});
+    if (inChat(c)) db.collection("channels").doc(id).update({["reads." + uid()]: TS()}).catch(() => {});
   }, () => { const box = $("msgs"); if (box) box.innerHTML = `<p class="hint err">Messages couldn't be loaded.</p>`; }));
-  const ta = th.querySelector("textarea"); ta.focus();
+  const ta = th.querySelector("textarea"); if (!ta) return; ta.focus();
   ta.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); th.querySelector("form").requestSubmit(); } });
 }
 async function sendMsg(form){
