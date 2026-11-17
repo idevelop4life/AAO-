@@ -85,7 +85,8 @@ $("auth-form").addEventListener("submit", async e => {
 
 document.querySelectorAll("[data-signout]").forEach(b => b.addEventListener("click", async () => {
   if (dirty && !confirmLeave()) return;
-  dirty = false; await auth.signOut();
+  dirty = false; try { history.replaceState(null, "", location.pathname); } catch {}   /* next sign-in starts on My overview */
+  await auth.signOut();
 }));
 $("pending-refresh").addEventListener("click", () => boot(auth.currentUser));
 
@@ -139,7 +140,11 @@ async function boot(user){
   if (!data) { $("savebar").hidden = true; $("content").innerHTML = `<div class="notice">The website content couldn't be loaded. Check that Firestore is set up and the rules are published, then reload.</div>`; return; }
   await loadMedia(data);
   SAVED = data; S = structuredClone(SAVED); dirty = false;
-  tab = "account";                      /* everyone starts on their own profile */
+  /* Stay on the same page after a refresh (the page is kept in the address, e.g. #/ws_tasks/abc123).
+     A fresh sign-in with no page in the address starts on My overview. */
+  const [hTab, hItem] = decodeURIComponent(location.hash.replace(/^#\/?/, "")).split("/");
+  tab = hTab && (hTab in CONTENT_TABS || hTab in OTHER_TABS || (window.WS && WS.tabs[hTab])) ? hTab : "account";
+  if (hItem) window.__WS_OPEN = tab === "ws_tasks" ? {id: hItem} : tab === "ws_chat" ? {channel: hItem} : tab === "ws_calendar" ? {event: hItem} : null;
   if (window.WS) WS.start();
   drawNav(); draw();
   const when = snap && snap.exists ? snap.data().updatedAt : null;
@@ -367,9 +372,13 @@ $("tabs").addEventListener("click", e => {
 });
 $("menu-btn").addEventListener("click", () => $("side").classList.toggle("open"));
 
+function setHash(t, item){ try { history.replaceState(null, "", "#/" + t + (item ? "/" + encodeURIComponent(item) : "")); } catch {} }
+window.__setHash = item => setHash(tab, item);
 function draw(){
   if (window.WS) WS.leave();
   if (tab !== "account" && tab !== "users" && !can(tab)) tab = "account";
+  if (tab === "users" && role !== "super_admin") tab = "account";
+  setHash(tab, window.__WS_OPEN && (window.__WS_OPEN.id || window.__WS_OPEN.channel || window.__WS_OPEN.event));
   if (window.WS && WS.tabs[tab]) { $("savebar").hidden = true; $("tab-title").textContent = WS.tabs[tab]; WS.draw(tab); return; }
   if (tab === "users" && role !== "super_admin") tab = "account";
   const isContent = tab in CONTENT_TABS;

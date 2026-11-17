@@ -17,7 +17,7 @@ const TYPES = ["Content", "Video", "Design", "Social", "Website", "Admin", "Othe
 
 let PEOPLE = {}, TASKS = [], CHANNELS = [], NOTES = [], EVENTS = [], DOCS = [], FOLDERS = [], migrated = false;
 let subs = [], viewSubs = [], current = null;
-let pendingChannel = null, pendingEvent = null;
+let pendingChannel = null, pendingEvent = null, pendingEventNew = false, pendingTask = null;
 let taskFilter = "all", openChannel = null, calMonth = (d => new Date(d.getFullYear(), d.getMonth(), 1))(new Date()), docFolder = "All";
 
 /* ---------- helpers ---------- */
@@ -130,12 +130,13 @@ function stop(){ subs.forEach(u => u()); subs = []; leave(); clearInterval(beatT
 function leave(){ viewSubs.forEach(u => u()); viewSubs = []; current = null; }
 function refresh(k){
   drawSummary();
+  if (current === "ws_tasks" && pendingTask && TASKS.find(t => t.id === pendingTask) && !$("ws-modal")) { const id = pendingTask; pendingTask = null; openTask(id); return; }
   if (!current || (k && current !== k)) return;
   if (current === "ws_chat") {                                    /* never rebuild an open conversation */
     if (pendingChannel && CHANNELS.find(c => c.id === pendingChannel)) { const id = pendingChannel; pendingChannel = null; openThread(id); return; }
     drawChatList(); return;
   }
-  if (current === "ws_calendar" && pendingEvent && EVENTS.find(e => e.id === pendingEvent)) { const id = pendingEvent; pendingEvent = null; draw(current); openEvent(id, true); return; }
+  if (current === "ws_calendar" && pendingEvent && EVENTS.find(e => e.id === pendingEvent)) { const id = pendingEvent, isNew = pendingEventNew; pendingEvent = null; pendingEventNew = false; draw(current); openEvent(id, isNew); return; }
   if (document.querySelector("#content :focus")) return;          /* don't interrupt typing */
   draw(current);
 }
@@ -246,7 +247,7 @@ function drawTasks(open){
           <span class="card-foot">${avatar(t.assignee, 24)}<span class="hint">${t.due ? "Due " + esc(fmtDay(t.due)) : ""}</span>${t.comments ? `<span class="hint">💬 ${t.comments}</span>` : ""}</span>
         </button>`).join("") || `<p class="hint empty-col">Nothing here.</p>`}
       </section>`; }).join("")}</div>`;
-  if (open && open.id) openTask(open.id);
+  if (open && open.id) { if (TASKS.find(t => t.id === open.id)) openTask(open.id); else pendingTask = open.id; }
 }
 function taskForm(t = {}){
   const opts = assignable(); if (t.assignee && !opts.includes(t.assignee)) opts.push(t.assignee);
@@ -270,12 +271,13 @@ function modal(html, wide){
   m.innerHTML = `<div class="ws-dialog${wide ? " wide" : ""}" role="dialog" aria-modal="true"><button class="x" type="button" data-close-modal aria-label="Close">✕</button>${html}</div>`;
   document.body.appendChild(m); const f = m.querySelector("input,textarea,select"); if (f) f.focus();
 }
-function closeModal(){ const m = $("ws-modal"); if (m) { viewSubs = viewSubs.filter(u => u !== m._unsub); if (m._unsub) m._unsub(); m.remove(); } }
+function closeModal(){ const m = $("ws-modal"); if (m && window.__setHash) window.__setHash(current === "ws_chat" ? openChannel : null); if (m) { viewSubs = viewSubs.filter(u => u !== m._unsub); if (m._unsub) m._unsub(); m.remove(); } }
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
 document.addEventListener("click", e => { if (e.target.closest("[data-close-modal]") || e.target.id === "ws-modal") closeModal(); });
 
 function openTask(id){
   const t = TASKS.find(x => x.id === id); if (!t) return;
+  if (window.__setHash) window.__setHash(id);
   const mayEdit = isCreator(t), mayMove = canMove(t);
   const pr = (PRIORITIES.find(p => p[0] === t.priority) || PRIORITIES[1])[1];
   const readOnly = `<h3 class="group-title" style="margin-top:6px">${esc(t.title)}</h3>
@@ -351,6 +353,7 @@ function drawChatList(){
 }
 function openThread(id){
   openChannel = id; const c = CHANNELS.find(x => x.id === id); if (!c) return;
+  if (window.__setHash) window.__setHash(id);
   content.querySelector(".chat").classList.add("has-open"); drawChatList();
   const th = $("chat-thread");
   th.innerHTML = `<header class="th-head"><button class="btn ghost sm th-back" type="button" data-chat-back>← Back</button>${chAvatar(c, 34)}<div><strong>${esc(chName(c))}</strong><div class="hint">${c.type === "group" ? esc(c.members.map(pname).join(", ")) : (o => esc([stateLabel(o), person(o).statusText && stateOf(o) !== "offline" ? person(o).statusText : "", person(o).title].filter(Boolean).join(" · ")))(c.members.find(m => m !== uid()))}</div></div>
@@ -429,7 +432,7 @@ function drawCalendar(open){
         ${dueOn(s).map(t => `<button class="ev due" type="button" data-open-task="${esc(t.id)}">Due: ${esc(t.title)}</button>`).join("")}</div>`; }).join("")}</div></div>
     <h3 class="group-title">Coming up</h3>
     <div class="agenda">${upcoming.map(x => `<button class="ag" type="button" ${x.kind === "event" ? `data-event="${esc(x.id)}"` : `data-open-task="${esc(x.id)}"`}><span class="ag-d">${esc(fmtDay(x.date))}</span><span>${x.kind === "task" ? "Due: " : ""}${esc(x.title)}${x.start && !x.allDay ? ` <span class="hint">${esc(x.start)}</span>` : ""}</span></button>`).join("") || `<p class="hint">Nothing scheduled.</p>`}</div>`;
-  if (open && open.event) openEvent(open.event);
+  if (open && open.event) { if (EVENTS.find(e => e.id === open.event)) openEvent(open.event); else pendingEvent = open.event; }
 }
 function eventForm(ev = {}){
   return `<form class="ws-form" data-event-form="${esc(ev.id || "")}">
@@ -446,6 +449,7 @@ function eventForm(ev = {}){
 }
 function openEvent(id, justCreated){
   const ev = EVENTS.find(e => e.id === id); if (!ev) return;
+  if (window.__setHash) window.__setHash(id);
   const mine = isSuper() || ev.createdBy === uid();
   modal(`${justCreated ? `<div class="notice"><strong>Event created.</strong> <span class="hint">Click "Add to Google Calendar" below so it shows on your phone.</span></div>` : ""}<p class="hint" style="margin:0">Created by ${esc(pname(ev.createdBy))}</p>
     ${mine ? eventForm(ev) : `<h3 class="group-title">${esc(ev.title)}</h3><p>${esc(fmtDay(ev.date))} ${ev.allDay ? "· all day" : `· ${esc(ev.start || "")}–${esc(ev.end || "")}`}</p><p>${esc(ev.desc || "")}</p>`}
@@ -464,7 +468,7 @@ async function saveEvent(form){
     data.attendees.forEach(p => notify(p, `${myLabel()} ${id ? "updated" : "invited you to"} "${data.title}" on ${fmtDay(data.date)}`, {tab: "ws_calendar", event: evId}));
     closeModal();
     if (id) msg("Event saved.");
-    else { msg("Event created. Add it to your Google Calendar so your phone reminds you."); if (EVENTS.find(e => e.id === evId)) openEvent(evId, true); else pendingEvent = evId; }
+    else { msg("Event created. Add it to your Google Calendar so your phone reminds you."); if (EVENTS.find(e => e.id === evId)) openEvent(evId, true); else { pendingEvent = evId; pendingEventNew = true; } }
   } catch { msg("That event didn't save. Check your Calendar access.", true); }
 }
 
@@ -595,7 +599,7 @@ content.addEventListener("click", e => {
   if ((b = g("[data-task]"))) { openTask(b.dataset.task); return; }
   if ((b = g("[data-open-task]"))) { A.goto("ws_tasks", {id: b.dataset.openTask}); return; }
   if ((b = g("[data-channel]"))) { openThread(b.dataset.channel); return; }
-  if ((b = g("[data-chat-back]"))) { openChannel = null; content.querySelector(".chat").classList.remove("has-open"); drawChatList(); return; }
+  if ((b = g("[data-chat-back]"))) { openChannel = null; if (window.__setHash) window.__setHash(null); content.querySelector(".chat").classList.remove("has-open"); drawChatList(); return; }
   if ((b = g("[data-new-dm]"))) { pickPeople("New message", false); return; }
   if ((b = g("[data-new-group]"))) { pickPeople("New group", true, [], `<label class="f"><span>Group name</span><input type="text" name="gname" maxlength="60" placeholder="e.g. Content team"></label>`); $("ws-modal").dataset.group = ""; return; }
   if ((b = g("[data-group-edit]"))) { const c = CHANNELS.find(x => x.id === b.dataset.groupEdit);
