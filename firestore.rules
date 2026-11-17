@@ -185,8 +185,8 @@ service cloud.firestore {
     }
 
     // Shared documents (the files themselves live in Storage under workspace/)
-    // Document folders: only super admins create or change them. A folder is either open to everyone
-    // with Documents access, or only to the people listed in "members". Super admins see everything.
+    // Document folders: open to everyone with Documents access, or only to the people in "members".
+    // Super admins see everything.
     match /folders/{fid} {
       allow read: if isSuper()
         || (canDo('ws_docs') && (resource.data.open == true || request.auth.uid in resource.data.members
