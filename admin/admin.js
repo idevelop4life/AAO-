@@ -164,7 +164,7 @@ async function boot(user){
   drawNav(); draw();
   const when = snap && snap.exists ? snap.data().updatedAt : null;
   setStatus(when ? `Last published ${fmtWhen(when)}.` : "All changes saved.");
-  if (role === "super_admin") refreshPendingCount();
+  if (role === "super_admin") { refreshPendingCount(); watchApprovals(); }
 }
 /* Doorway for workspace.js */
 window.__ADMIN = {
@@ -696,7 +696,9 @@ content.addEventListener("click", async e => {
     await db.collection("users").doc(id).update(a ? {emailApproved: next, emailRequest: firebase.firestore.FieldValue.delete()} : {emailRequest: firebase.firestore.FieldValue.delete()});
     await db.collection("notifications").doc(id).collection("items").add({text: a ? `Your email change to ${next} was approved. Go to My overview → Sign-in & security to finish it.` : `Your request to change your email to ${next} was declined.`,
       link: {tab: "account"}, from: me.uid, read: false, createdAt: TS()});
-    noteUsers(a ? `Approved. They'll finish the change from their overview.` : "Request declined.", "hint okc"); drawUsers(); refreshPendingCount();
+    noteUsers(a ? `Approved. They'll finish the change from their overview.` : "Request declined.", "hint okc");
+    approvalNote = a ? `Approved ${next}. They'll get a notification to finish the change.` : `Declined the change to ${next}.`;
+    if (tab === "users") drawUsers(); else drawApprovals();
   } catch { b.disabled = false; noteUsers("That didn't save. Make sure the latest database rules are published.", "hint err"); drawUsers(); }
 });
 /* Super admin: reset or set someone's password */
@@ -735,6 +737,36 @@ async function refreshPendingCount(){
     const n = snap.size + reqs, b = document.getElementById("pending-badge"); if (b) b.innerHTML = n ? `<span class="chip" style="margin-left:6px">${n}</span>` : "";
   } catch {}
 }
+/* ---------------- approvals (super admins) ---------------- */
+let APPROVALS = {signups: [], emails: []}, approvalsUnsub = null, approvalNote = "";
+function watchApprovals(){
+  if (approvalsUnsub) approvalsUnsub();
+  approvalsUnsub = db.collection("users").onSnapshot(s => {
+    const all = s.docs.map(d => ({id: d.id, ...d.data()}));
+    APPROVALS = {signups: all.filter(u => u.role === "pending"), emails: all.filter(u => u.emailRequest && u.emailRequest.email)};
+    const n = APPROVALS.signups.length + APPROVALS.emails.length, b = document.getElementById("pending-badge");
+    if (b) b.innerHTML = n ? `<span class="chip" style="margin-left:6px">${n}</span>` : "";
+    drawApprovals();
+    if (tab === "users" && !document.querySelector("#content :focus")) drawUsers();
+  }, () => {});
+}
+function drawApprovals(){
+  const box = $("me-approvals"); if (!box) return;
+  if (role !== "super_admin") { box.innerHTML = ""; return; }
+  const {signups, emails} = APPROVALS;
+  const note = approvalNote ? `<p class="hint okc">${esc(approvalNote)}</p>` : "";
+  if (!signups.length && !emails.length) { box.innerHTML = note; return; }
+  box.innerHTML = note + `<h3 class="group-title">Needs your approval <span class="chip">${signups.length + emails.length}</span></h3><div class="sum-grid">
+    ${emails.map(u => `<section class="sum-card"><h4>Email change</h4>
+      <p class="hint" style="margin:0"><strong>${esc(u.name || u.email)}</strong> wants to sign in with <strong>${esc(u.emailRequest.email)}</strong> instead of ${esc(u.email)}.</p>
+      <div class="row-btns"><button class="btn sm" type="button" data-email-approve="${esc(u.id)}" data-new="${esc(u.emailRequest.email)}">Approve</button>
+      <button class="btn ghost sm" type="button" data-email-decline="${esc(u.id)}" data-new="${esc(u.emailRequest.email)}">Decline</button></div></section>`).join("")}
+    ${signups.map(u => `<section class="sum-card"><h4>New sign-up</h4>
+      <p class="hint" style="margin:0"><strong>${esc(u.email)}</strong> is waiting for access.</p>
+      <button class="btn sm" type="button" data-go-users>Review in Users &amp; access</button></section>`).join("")}</div>`;
+}
+document.addEventListener("click", e => { if (e.target.closest("[data-go-users]")) window.__ADMIN.goto("users"); });
+
 /* ---------------- account ---------------- */
 /* Changing your sign-in email: ask -> a super admin approves -> you confirm from the new inbox. */
 function emailBoxHTML(){
@@ -774,7 +806,7 @@ function paintMe(){
 }
 document.addEventListener("click", e => { if (e.target.closest("[data-open-profile]")) { e.preventDefault(); $("side").classList.remove("open"); window.__ADMIN.goto("account"); } });
 function drawAccount(){
-  setTimeout(() => { const s = $("me-avatar"); if (s) { s.innerHTML = avatarHTML({name: myName, email: me.email, photo: myPhoto}, 84); loadMedia({p: myPhoto}).then(() => { const i = s.querySelector("img"); if (i) i.src = imgSrc(myPhoto); }); } if (window.WS) WS.drawSummary(); }, 0);
+  setTimeout(() => { const s = $("me-avatar"); if (s) { s.innerHTML = avatarHTML({name: myName, email: me.email, photo: myPhoto}, 84); loadMedia({p: myPhoto}).then(() => { const i = s.querySelector("img"); if (i) i.src = imgSrc(myPhoto); }); } if (window.WS) WS.drawSummary(); drawApprovals(); }, 0);
   const first = (myName || "").split(" ")[0];
   const wsHave = WS_PERMS.filter(([k]) => can(k)).map(([,l]) => l), siteHave = PERM_LABELS.filter(([k]) => can(k)).map(([,l]) => l);
   const chips = l => l.map(x => `<span class="chip muted">${esc(x)}</span>`).join(" ");
@@ -789,6 +821,7 @@ function drawAccount(){
       </div>
     </section>
     <p class="hint" style="max-width:640px">This is your home in the admin. It shows what's waiting for you and what you have access to. Use the menu to get to your work.</p>
+    <div id="me-approvals"></div>
     <div id="me-summary"></div>
     <h3 class="group-title">What you can use</h3>
     ${role === "super_admin" ? `<p class="hint">Everything. As a super admin you can also manage people under Users &amp; access.</p>`
