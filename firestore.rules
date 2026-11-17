@@ -68,12 +68,14 @@ service cloud.firestore {
           && request.resource.data.role in ['pending', 'admin', 'super_admin']
           && request.resource.data.get('perms', []) is list)
         || (signedIn() && request.auth.uid == uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo', 'status', 'statusText', 'lastSeen'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo', 'status', 'statusText', 'lastSeen', 'email'])
+          && request.resource.data.email == request.auth.token.email
           && request.resource.data.get('status', 'online') in ['online', 'busy', 'away', 'offline']
           && request.resource.data.get('statusText', '') is string && request.resource.data.get('statusText', '').size() <= 60
           && request.resource.data.get('name', '') is string && request.resource.data.get('name', '').size() <= 80)
         || (isSuper() && request.auth.uid == uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo', 'title', 'status', 'statusText', 'lastSeen']));
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo', 'title', 'status', 'statusText', 'lastSeen', 'email'])
+          && request.resource.data.email == request.auth.token.email);
 
       // Super admins can remove other people's access records (never their own).
       // Removed people go back to "waiting for approval" if they sign in again.

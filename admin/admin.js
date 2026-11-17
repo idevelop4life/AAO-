@@ -94,7 +94,13 @@ $("pending-refresh").addEventListener("click", () => boot(auth.currentUser));
 async function ensureProfile(user){
   const ref = db.collection("users").doc(user.uid);
   const snap = await ref.get();
-  if (snap.exists) return snap.data();
+  if (snap.exists) {
+    const d = snap.data();
+    if (user.email && d.email !== user.email) {          /* they confirmed a new email address */
+      try { await ref.update({email: user.email}); d.email = user.email; } catch {}
+    }
+    return d;
+  }
   const boot = await db.doc("meta/bootstrap").get();
   if (!boot.exists) {
     try {
@@ -749,10 +755,18 @@ function drawAccount(){
     <details class="me-security">
       <summary>Sign-in &amp; security <span class="hint">(optional)</span></summary>
       <form id="pw-form" style="display:grid;gap:14px;max-width:420px;margin-top:12px" novalidate>
-        <p class="hint" style="margin:0">You don't need to do anything here. Only change your password if you want a new one.</p>
+        <p class="hint" style="margin:0">You don't need to do anything here. Only change your email or password if you want to.</p>
         <label class="f" for="pw-new"><span>New password (8+ characters)</span><input type="password" id="pw-new" autocomplete="new-password" minlength="8"></label>
         <button class="btn ghost" type="submit" style="justify-self:start">Change password</button>
         <p class="hint" id="pw-msg" role="status" aria-live="polite"></p>
+      </form>
+      <form id="email-form" style="display:grid;gap:14px;max-width:420px;margin-top:22px" novalidate>
+        <h4 style="margin:0">Change your email</h4>
+        <p class="hint" style="margin:0">You sign in with <strong>${esc(me.email)}</strong>. We'll send a confirmation link to the new address, and the change happens when you click it.</p>
+        <label class="f" for="em-new"><span>New email</span><input type="email" id="em-new" autocomplete="email" placeholder="you@example.com"></label>
+        <label class="f" for="em-pw"><span>Your current password</span><input type="password" id="em-pw" autocomplete="current-password"></label>
+        <button class="btn ghost" type="submit" style="justify-self:start">Send confirmation link</button>
+        <p class="hint" id="em-msg" role="status" aria-live="polite"></p>
       </form>
     </details>`;
 }
@@ -808,6 +822,29 @@ content.addEventListener("change", async e => {
     noteUsers(`Access updated to ${ROLE_LABEL[sel.value]}.`, "hint okc"); refreshPendingCount(); drawUsers();
   } catch { msg.textContent = "That change didn't save."; msg.className = "hint err"; drawUsers(); }
   finally { sel.disabled = false; }
+});
+content.addEventListener("submit", async e => {
+  if (e.target.id !== "email-form") return;
+  e.preventDefault();
+  const next = $("em-new").value.trim().toLowerCase(), pw = $("em-pw").value, msg = $("em-msg"), btn = e.target.querySelector("button");
+  const say = (t, ok) => { msg.textContent = t; msg.className = ok ? "hint okc" : "hint err"; };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(next)) return say("Enter a valid email address.");
+  if (next === (me.email || "").toLowerCase()) return say("That's already your email.");
+  if (!pw) return say("Enter your current password so we know it's you.");
+  btn.disabled = true; say("Sending…", true);
+  try {
+    await auth.currentUser.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(me.email, pw));
+    await auth.currentUser.verifyBeforeUpdateEmail(next);
+    say(`Check ${next} (and its spam folder) for a link. Your email changes once you click it. After that, sign in with ${next}.`, true);
+    $("em-pw").value = "";
+  } catch (err) {
+    const c = err && err.code;
+    say(c === "auth/wrong-password" || c === "auth/invalid-credential" || c === "auth/invalid-login-credentials" ? "That password isn't right."
+      : c === "auth/email-already-in-use" ? "Another account already uses that email."
+      : c === "auth/too-many-requests" ? "Too many tries. Wait a few minutes and try again."
+      : "That didn't work. Please try again.");
+  }
+  btn.disabled = false;
 });
 content.addEventListener("submit", async e => {
   if (e.target.id !== "pw-form") return;
