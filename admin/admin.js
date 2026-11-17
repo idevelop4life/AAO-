@@ -32,6 +32,7 @@ const toDate = t => t && t.toDate ? t.toDate() : (t ? new Date(t) : null);
 const fmtWhen = t => { const d = toDate(t); return !d || isNaN(d) ? "" : d.toLocaleString("en-US", {month:"short", day:"numeric", year:"numeric", hour:"numeric", minute:"2-digit"}); };
 
 let myPhoto = "", myTitle = "";
+let myEmailReq = null, myEmailOk = "";
 let me = null, role = null, perms = [], myName = "", SAVED = null, S = null, dirty = false, tab = "account", saving = false;
 const storage = (CFG.storageBucket && firebase.storage) ? firebase.storage() : null;
 
@@ -96,8 +97,11 @@ async function ensureProfile(user){
   const snap = await ref.get();
   if (snap.exists) {
     const d = snap.data();
-    if (user.email && d.email !== user.email) {          /* they confirmed a new email address */
-      try { await ref.update({email: user.email}); d.email = user.email; } catch {}
+    if (user.email && d.email && d.email.toLowerCase() !== user.email.toLowerCase()) {
+      /* their sign-in email changed: accept it only if a super admin approved that address */
+      if ((d.emailApproved || "").toLowerCase() === user.email.toLowerCase()) {
+        try { await ref.update({email: user.email}); d.email = user.email; } catch {}
+      } else d.__unapprovedEmail = true;
     }
     return d;
   }
@@ -138,6 +142,11 @@ async function boot(user){
   catch { authMsg("Couldn't load your account. Make sure the Firestore rules have been published.", "hint err"); show("v-auth"); return; }
   role = prof.role; perms = Array.isArray(prof.perms) ? prof.perms : []; myName = prof.name || ""; myPhoto = prof.photo || ""; myTitle = prof.title || "";
   if (role !== "admin" && role !== "super_admin") { $("pending-email").textContent = user.email; show("v-pending"); return; }
+  if (prof.__unapprovedEmail) {             /* email was changed without a super admin's approval */
+    $("pending-email").textContent = `${user.email} (this email change hasn't been approved; ask a super admin to approve it, or sign in with ${prof.email})`;
+    show("v-pending"); return;
+  }
+  myEmailReq = prof.emailRequest || null; myEmailOk = prof.emailApproved || "";
   let snap, data;
   try { snap = await db.doc("site/content").get(); data = snap.exists ? snap.data().data : await seedContent(); }
   catch { data = null; }
@@ -620,6 +629,10 @@ async function drawUsers(){
   content.innerHTML = `
     <div class="notice"><strong>How access works.</strong> <span class="hint" style="display:block;margin-top:4px">People request access at <strong>${esc(location.origin)}/admin</strong> with their email. They can't change anything until you give them a role here.<br>
     <b>Admin</b>: edits only the sections you tick for them. <b>Super admin</b>: everything, including this page. You can't change your own role, so there's always at least one super admin.</span></div>
+    ${users.filter(u => u.emailRequest && u.emailRequest.email).map(u => `<div class="notice email-req"><strong>Email change request</strong>
+      <span class="hint" style="display:block;margin:4px 0 10px">${esc(u.name || u.email)} wants to sign in with <strong>${esc(u.emailRequest.email)}</strong> instead of ${esc(u.email)}.</span>
+      <div class="row-btns"><button class="btn sm" type="button" data-email-approve="${esc(u.id)}" data-new="${esc(u.emailRequest.email)}">Approve</button>
+      <button class="btn ghost sm" type="button" data-email-decline="${esc(u.id)}" data-new="${esc(u.emailRequest.email)}">Decline</button></div></div>`).join("")}
     ${pending.length ? `<p class="hint" style="color:var(--gold)">${pending.length} ${pending.length === 1 ? "person is" : "people are"} waiting for approval.</p>` : ""}
     <p class="${usersNote ? usersNote[1] : "hint"}" id="users-msg" role="status" aria-live="polite">${usersNote ? esc(usersNote[0]) : ""}</p>
     ${users.map(u => {
@@ -676,6 +689,16 @@ async function removeUser(btn){
   }
 }
 content.addEventListener("click", e => { const b = e.target.closest("[data-remove-user]"); if (b) removeUser(b); });
+content.addEventListener("click", async e => {
+  const a = e.target.closest("[data-email-approve]"), d = e.target.closest("[data-email-decline]"), b = a || d; if (!b) return;
+  const id = a ? a.dataset.emailApprove : d.dataset.emailDecline, next = b.dataset.new; b.disabled = true;
+  try {
+    await db.collection("users").doc(id).update(a ? {emailApproved: next, emailRequest: firebase.firestore.FieldValue.delete()} : {emailRequest: firebase.firestore.FieldValue.delete()});
+    await db.collection("notifications").doc(id).collection("items").add({text: a ? `Your email change to ${next} was approved. Go to My overview → Sign-in & security to finish it.` : `Your request to change your email to ${next} was declined.`,
+      link: {tab: "account"}, from: me.uid, read: false, createdAt: TS()});
+    noteUsers(a ? `Approved. They'll finish the change from their overview.` : "Request declined.", "hint okc"); drawUsers(); refreshPendingCount();
+  } catch { b.disabled = false; noteUsers("That didn't save. Make sure the latest database rules are published.", "hint err"); drawUsers(); }
+});
 /* Super admin: reset or set someone's password */
 content.addEventListener("click", async e => {
   const r = e.target.closest("[data-pw-reset]"), st = e.target.closest("[data-pw-set]");
@@ -708,10 +731,42 @@ async function savePerms(uid){
 async function refreshPendingCount(){
   try {
     const snap = await db.collection("users").where("role", "==", "pending").get();
-    const b = document.getElementById("pending-badge"); if (b) b.innerHTML = snap.size ? `<span class="chip" style="margin-left:6px">${snap.size}</span>` : "";
+    let reqs = 0; try { reqs = (await db.collection("users").where("emailRequest.email", ">", "").get()).size; } catch {}
+    const n = snap.size + reqs, b = document.getElementById("pending-badge"); if (b) b.innerHTML = n ? `<span class="chip" style="margin-left:6px">${n}</span>` : "";
   } catch {}
 }
 /* ---------------- account ---------------- */
+/* Changing your sign-in email: ask -> a super admin approves -> you confirm from the new inbox. */
+function emailBoxHTML(){
+  const approved = myEmailOk && myEmailOk.toLowerCase() !== (me.email || "").toLowerCase();
+  const head = `<h4 style="margin:0 0 6px">Change your email</h4><p class="hint" style="margin:0 0 12px">You sign in with <strong>${esc(me.email)}</strong>.</p>`;
+  if (approved) return head + `<form id="email-form" data-step="confirm" style="display:grid;gap:12px" novalidate>
+      <div class="notice"><strong>Approved.</strong> <span class="hint">A super admin approved <strong>${esc(myEmailOk)}</strong>. Send yourself the confirmation link to finish.</span></div>
+      <label class="f" for="em-pw"><span>Your current password</span><input type="password" id="em-pw" autocomplete="current-password"></label>
+      <button class="btn" type="submit" style="justify-self:start">Send confirmation link</button>
+      <p class="hint" id="em-msg" role="status" aria-live="polite"></p></form>`;
+  if (myEmailReq) return head + `<div class="notice"><strong>Waiting for approval.</strong> <span class="hint">You asked to change to <strong>${esc(myEmailReq.email)}</strong>. A super admin needs to approve it. You'll get a notification.</span></div>
+      <button class="btn ghost sm" type="button" data-email-cancel style="margin-top:10px">Cancel request</button><p class="hint" id="em-msg" role="status" aria-live="polite"></p>`;
+  return head + `<form id="email-form" data-step="ask" style="display:grid;gap:12px" novalidate>
+      <p class="hint" style="margin:0">${role === "super_admin" ? "As a super admin you approve your own change." : "A super admin approves the change first. Then you confirm it from the new inbox."}</p>
+      <label class="f" for="em-new"><span>New email</span><input type="email" id="em-new" autocomplete="email" placeholder="you@example.com"></label>
+      <label class="f" for="em-pw"><span>Your current password</span><input type="password" id="em-pw" autocomplete="current-password"></label>
+      <button class="btn ghost" type="submit" style="justify-self:start">${role === "super_admin" ? "Continue" : "Ask for approval"}</button>
+      <p class="hint" id="em-msg" role="status" aria-live="polite"></p></form>`;
+}
+function drawEmailBox(){ const b = $("email-box"); if (b) b.innerHTML = emailBoxHTML(); }
+async function notifySupers(text){
+  try {
+    const sup = await db.collection("users").where("role", "==", "super_admin").get();
+    await Promise.all(sup.docs.filter(d => d.id !== me.uid).map(d => db.collection("notifications").doc(d.id).collection("items")
+      .add({text, link: {tab: "users"}, from: me.uid, read: false, createdAt: TS()})));
+  } catch {}
+}
+content.addEventListener("click", async e => {
+  if (!e.target.closest("[data-email-cancel]")) return;
+  try { await db.collection("users").doc(me.uid).update({emailRequest: firebase.firestore.FieldValue.delete()}); myEmailReq = null; drawEmailBox(); }
+  catch { const m = $("em-msg"); if (m) m.textContent = "Couldn't cancel. Try again."; }
+});
 function paintMe(){
   const el = $("me-email"); if (!el || !me) return;
   el.innerHTML = `<button type="button" class="me-link" data-open-profile>${avatarHTML({name: myName, email: me.email, photo: myPhoto}, 36)}<span><strong>${esc(myName || "Add your name")}</strong><span class="hint" style="display:block">${esc(me.email)}</span></span></button>`;
@@ -760,14 +815,7 @@ function drawAccount(){
         <button class="btn ghost" type="submit" style="justify-self:start">Change password</button>
         <p class="hint" id="pw-msg" role="status" aria-live="polite"></p>
       </form>
-      <form id="email-form" style="display:grid;gap:14px;max-width:420px;margin-top:22px" novalidate>
-        <h4 style="margin:0">Change your email</h4>
-        <p class="hint" style="margin:0">You sign in with <strong>${esc(me.email)}</strong>. We'll send a confirmation link to the new address, and the change happens when you click it.</p>
-        <label class="f" for="em-new"><span>New email</span><input type="email" id="em-new" autocomplete="email" placeholder="you@example.com"></label>
-        <label class="f" for="em-pw"><span>Your current password</span><input type="password" id="em-pw" autocomplete="current-password"></label>
-        <button class="btn ghost" type="submit" style="justify-self:start">Send confirmation link</button>
-        <p class="hint" id="em-msg" role="status" aria-live="polite"></p>
-      </form>
+      <div id="email-box" style="max-width:420px;margin-top:22px">${emailBoxHTML()}</div>
     </details>`;
 }
 
@@ -826,25 +874,34 @@ content.addEventListener("change", async e => {
 content.addEventListener("submit", async e => {
   if (e.target.id !== "email-form") return;
   e.preventDefault();
-  const next = $("em-new").value.trim().toLowerCase(), pw = $("em-pw").value, msg = $("em-msg"), btn = e.target.querySelector("button");
+  const step = e.target.dataset.step, pw = $("em-pw").value, msg = $("em-msg"), btn = e.target.querySelector("button[type=submit]");
   const say = (t, ok) => { msg.textContent = t; msg.className = ok ? "hint okc" : "hint err"; };
+  const next = step === "confirm" ? myEmailOk : $("em-new").value.trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(next)) return say("Enter a valid email address.");
   if (next === (me.email || "").toLowerCase()) return say("That's already your email.");
   if (!pw) return say("Enter your current password so we know it's you.");
-  btn.disabled = true; say("Sending…", true);
+  btn.disabled = true; say("One moment…", true);
   try {
     await auth.currentUser.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(me.email, pw));
+    if (step === "ask" && role !== "super_admin") {
+      await db.collection("users").doc(me.uid).update({emailRequest: {email: next, at: TS()}});
+      myEmailReq = {email: next};
+      notifySupers(`${myName || me.email} asked to change their sign-in email to ${next}`);
+      drawEmailBox(); return;
+    }
+    if (step === "ask") { await db.collection("users").doc(me.uid).update({emailApproved: next}); myEmailOk = next; }
     await auth.currentUser.verifyBeforeUpdateEmail(next);
-    say(`Check ${next} (and its spam folder) for a link. Your email changes once you click it. After that, sign in with ${next}.`, true);
-    $("em-pw").value = "";
+    drawEmailBox();
+    const m = $("em-msg"); if (m) { m.textContent = `Check ${next} (and its spam folder) for a link. Your email changes once you click it. After that, sign in with ${next}.`; m.className = "hint okc"; }
   } catch (err) {
     const c = err && err.code;
     say(c === "auth/wrong-password" || c === "auth/invalid-credential" || c === "auth/invalid-login-credentials" ? "That password isn't right."
       : c === "auth/email-already-in-use" ? "Another account already uses that email."
       : c === "auth/too-many-requests" ? "Too many tries. Wait a few minutes and try again."
+      : c === "permission-denied" ? "That didn't save. A super admin needs to publish the latest database rules."
       : "That didn't work. Please try again.");
   }
-  btn.disabled = false;
+  if (btn) btn.disabled = false;
 });
 content.addEventListener("submit", async e => {
   if (e.target.id !== "pw-form") return;
