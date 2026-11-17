@@ -127,10 +127,10 @@ document.addEventListener("click", e => {
   if (m && e.target.closest("#me-menu [data-open-profile], #me-menu a")) m.hidden = true;
 });
 document.addEventListener("submit", e => { const f = e.target.closest("[data-status-note]"); if (!f) return; e.preventDefault(); setStatus({statusText: f.note.value.trim().slice(0, 60)}); f.querySelector("button").textContent = "Saved"; });
-function stop(){ subs.forEach(u => u()); subs = []; leave(); clearInterval(beatTimer); const b = $("bell"); if (b) b.hidden = true; const w = $("me-bubble-wrap"); if (w) w.hidden = true; }
-function leave(){ viewSubs.forEach(u => u()); viewSubs = []; current = null; }
+function stop(){ removeDock(); subs.forEach(u => u()); subs = []; leave(); clearInterval(beatTimer); const b = $("bell"); if (b) b.hidden = true; const w = $("me-bubble-wrap"); if (w) w.hidden = true; }
+function leave(){ viewSubs.forEach(u => u()); viewSubs = []; current = null; if (typeof drawDock === "function") drawDock(); }
 function refresh(k){
-  drawSummary();
+  drawSummary(); drawDock();
   if (current === "ws_tasks" && pendingTask && TASKS.find(t => t.id === pendingTask) && !$("ws-modal")) { const id = pendingTask; pendingTask = null; openTask(id); return; }
   if (!current || (k && current !== k)) return;
   if (current === "ws_chat") {                                    /* never rebuild an open conversation */
@@ -219,7 +219,7 @@ document.addEventListener("click", async e => {
 
 /* ---------- drawing ---------- */
 function draw(tab){
-  current = tab;
+  current = tab; drawDock();
   const open = window.__WS_OPEN; window.__WS_OPEN = null;
   ({ws_tasks: drawTasks, ws_chat: drawChat, ws_calendar: drawCalendar, ws_docs: drawDocs, ws_team: drawTeam})[tab](open);
 }
@@ -273,7 +273,7 @@ function modal(html, wide){
   m.innerHTML = `<div class="ws-dialog${wide ? " wide" : ""}" role="dialog" aria-modal="true"><button class="x" type="button" data-close-modal aria-label="Close">✕</button>${html}</div>`;
   document.body.appendChild(m); const f = m.querySelector("input,textarea,select"); if (f) f.focus();
 }
-function closeModal(){ const m = $("ws-modal"); if (m && window.__setHash) window.__setHash(current === "ws_chat" ? openChannel : null); if (m) { viewSubs = viewSubs.filter(u => u !== m._unsub); if (m._unsub) m._unsub(); m.remove(); } }
+function closeModal(){ if (typeof dockPick !== "undefined" && !document.querySelector("#ws-modal [data-dm]:focus")) setTimeout(() => { if (!$("ws-modal")) dockPick = false; }, 0); const m = $("ws-modal"); if (m && window.__setHash) window.__setHash(current === "ws_chat" ? openChannel : null); if (m) { viewSubs = viewSubs.filter(u => u !== m._unsub); if (m._unsub) m._unsub(); m.remove(); } }
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
 document.addEventListener("click", e => { if (e.target.closest("[data-close-modal]") || e.target.id === "ws-modal") closeModal(); });
 
@@ -410,7 +410,9 @@ async function openDM(other){
   const ids = [uid(), other].sort(), id = "dm_" + ids.join("_"), ref = db.collection("channels").doc(id);
   try { const s = await ref.get(); if (!s.exists) await ref.set({type: "dm", members: ids, createdBy: uid(), createdAt: TS(), lastAt: TS(), lastMessage: "", lastFrom: ""}); }
   catch { msg("That conversation couldn't be opened. Check that you have Chat access.", true); return; }
-  closeModal(); A.goto("ws_chat", {channel: id});
+  closeModal();
+  if (dockPick) { dockPick = false; openMini(id); return; }
+  A.goto("ws_chat", {channel: id});
 }
 function pickPeople(title, multi, preselected = [], extra = ""){
   modal(`<h3 class="group-title" style="margin-top:0">${title}</h3>${extra}
@@ -685,6 +687,91 @@ document.addEventListener("click", e => {
   document.querySelectorAll(".emoji-pop:not([hidden])").forEach(p => { if (!p.parentElement.contains(e.target)) { p.hidden = true; p.previousElementSibling.setAttribute("aria-expanded", "false"); } });
 });
 
-window.WS = {tabs: TABS, draw, start, stop, leave, badges, drawSummary};
+
+/* ===== CORNER CHAT (bottom-right, like Facebook) ===== */
+let MINI = [], miniSubs = {}, dockOpen = false, dockPick = false, pendingMini = null;
+try { MINI = JSON.parse(sessionStorage.getItem("cd-wins") || "[]"); } catch { MINI = []; }
+const saveMini = () => { try { sessionStorage.setItem("cd-wins", JSON.stringify(MINI)); } catch {} };
+const maxWins = () => window.innerWidth < 700 ? 1 : window.innerWidth < 1100 ? 2 : 3;
+function dockEl(){
+  let d = $("chat-dock"); if (d) return d;
+  d = document.createElement("div"); d.id = "chat-dock";
+  d.innerHTML = `<div class="cd-wins" id="cd-wins"></div>
+    <div class="cd-panel" id="cd-panel" hidden role="dialog" aria-label="Chats">
+      <div class="cd-phead"><strong>Chats</strong><span style="display:flex;gap:6px"><button class="btn ghost sm" type="button" data-cd-new>New message</button><button class="cd-x" type="button" data-cd-toggle aria-label="Close">✕</button></span></div>
+      <div class="cd-list" id="cd-list"></div>
+      <button class="cd-full" type="button" data-cd-full>Open full chat page</button></div>
+    <button class="cd-launch" type="button" data-cd-toggle aria-label="Chats"><span aria-hidden="true">💬</span><span class="cd-badge" id="cd-badge" hidden></span></button>`;
+  document.body.appendChild(d); return d;
+}
+function drawDock(){
+  if (!uid() || !canWS("ws_chat")) { removeDock(); return; }
+  const d = dockEl(); d.hidden = current === "ws_chat";          /* the full Chat page is already open */
+  const n = unreadChannels(), b = $("cd-badge"); b.hidden = !n; b.textContent = n > 9 ? "9+" : n;
+  const list = $("cd-list");
+  if (list && dockOpen) list.innerHTML = CHANNELS.filter(inChat).map(c => { const unread = c.lastAt && c.lastFrom !== uid() && (!c.reads || !c.reads[uid()] || toDate(c.reads[uid()]) < toDate(c.lastAt));
+    return `<button class="chat-item${unread ? " unread" : ""}" type="button" data-cd-open="${esc(c.id)}">${chAvatar(c, 36)}<span class="ci-text"><strong>${esc(chName(c))}</strong><span class="hint">${esc((c.lastFrom === uid() ? "You: " : "") + (c.lastMessage || "No messages yet"))}</span></span>${unread ? `<span class="dot"></span>` : ""}</button>`; }).join("")
+    || `<p class="hint" style="padding:14px">No conversations yet. Click New message to start one.</p>`;
+  if (pendingMini && CHANNELS.find(c => c.id === pendingMini)) { const id = pendingMini; pendingMini = null; openMini(id); }
+  MINI = MINI.filter(w => CHANNELS.find(c => c.id === w.id) || !CHANNELS.length);
+  MINI.forEach(w => miniShell(w));
+  [...document.querySelectorAll(".cd-win")].forEach(el => { if (!MINI.find(w => w.id === el.dataset.win)) { closeMiniSub(el.dataset.win); el.remove(); } });
+}
+function removeDock(){ Object.keys(miniSubs).forEach(closeMiniSub); const d = $("chat-dock"); if (d) d.remove(); }
+function closeMiniSub(id){ if (miniSubs[id]) { miniSubs[id](); delete miniSubs[id]; } }
+function openMini(id){
+  if (!CHANNELS.find(c => c.id === id)) { pendingMini = id; return; }
+  const ex = MINI.find(w => w.id === id);
+  if (ex) ex.min = false; else { MINI.unshift({id, min: false}); while (MINI.length > maxWins()) MINI.pop(); }
+  dockOpen = false; $("cd-panel").hidden = true; saveMini(); drawDock();
+  const el = document.querySelector(`.cd-win[data-win="${CSS.escape(id)}"] textarea`); if (el) el.focus();
+}
+function miniShell(w){
+  const c = CHANNELS.find(x => x.id === w.id); if (!c) return;
+  let el = document.querySelector(`.cd-win[data-win="${CSS.escape(w.id)}"]`);
+  const box = $("cd-wins");
+  if (!el) {
+    el = document.createElement("section"); el.className = "cd-win"; el.dataset.win = w.id;
+    el.innerHTML = `<header class="cd-whead" data-cd-min="${esc(w.id)}"><span class="cd-who"></span><span class="cd-wbtns">
+        <button type="button" data-cd-expand="${esc(w.id)}" title="Open on the Chat page" aria-label="Open on the Chat page">↗</button>
+        <button type="button" data-cd-min="${esc(w.id)}" title="Minimize" aria-label="Minimize">–</button>
+        <button type="button" data-cd-close="${esc(w.id)}" title="Close" aria-label="Close">✕</button></span></header>
+      <div class="cd-body"><div class="msgs cd-msgs"><p class="hint">Loading…</p></div>
+      ${inChat(c) ? `<form class="send" data-send="${esc(w.id)}"><div class="emoji-wrap"><button class="emoji-btn" type="button" data-emoji-toggle aria-label="Add emoji" aria-expanded="false">😊</button>
+        <div class="emoji-pop" hidden role="dialog" aria-label="Emoji">${EMOJI.map(([g, list]) => `<p class="hint">${g}</p><div class="emoji-grid">${[...list].filter(x => x.trim()).map(x => `<button type="button" data-emoji="${x}">${x}</button>`).join("")}</div>`).join("")}</div></div>
+        <textarea name="text" maxlength="4000" placeholder="Aa" rows="1" required></textarea><button class="btn sm" type="submit" aria-label="Send">➤</button></form>`
+        : `<p class="hint" style="padding:8px 10px;margin:0">View only (super admin).</p>`}</div>`;
+    box.appendChild(el);
+    const ta = el.querySelector("textarea");
+    if (ta) ta.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ta.form.requestSubmit(); } });
+    miniSubs[w.id] = db.collection("channels").doc(w.id).collection("messages").orderBy("at").limitToLast(60).onSnapshot(s => {
+      const m = el.querySelector(".cd-msgs"); if (!m) return; let last = null;
+      const ch = CHANNELS.find(x => x.id === w.id) || c;
+      m.innerHTML = s.docs.map(d => { const x = d.data(), mine = x.from === uid(), showWho = x.from !== last; last = x.from;
+        return `<div class="msg${mine ? " mine" : ""}">${!mine && showWho ? avatar(x.from, 24) : `<span style="width:24px;flex:none"></span>`}<div class="bubble">${!mine && showWho && (ch.type === "group" || !inChat(ch)) ? `<span class="who">${esc(pname(x.from))}</span>` : ""}${esc(x.text).replace(/\n/g, "<br>")}<span class="t">${esc(when(x.at))}</span></div></div>`; }).join("") || `<p class="hint">Say hello 👋</p>`;
+      m.scrollTop = m.scrollHeight;
+      const cur = MINI.find(z => z.id === w.id);
+      if (cur && !cur.min && inChat(ch)) db.collection("channels").doc(w.id).update({["reads." + uid()]: TS()}).catch(() => {});
+    }, () => {});
+  }
+  if (el.parentElement !== box || [...box.children].indexOf(el) !== MINI.indexOf(w)) box.insertBefore(el, box.children[MINI.indexOf(w)] || null);
+  const unread = inChat(c) && c.lastAt && c.lastFrom !== uid() && (!c.reads || !c.reads[uid()] || toDate(c.reads[uid()]) < toDate(c.lastAt));
+  el.classList.toggle("min", !!w.min); el.classList.toggle("unread", !!(w.min && unread));
+  el.querySelector(".cd-who").innerHTML = `${chAvatar(c, 26)}<strong>${esc(chName(c))}</strong>`;
+}
+document.addEventListener("click", e => {
+  const g = s => e.target.closest(s); let b;
+  if (!g("#chat-dock") && !dockPick) return;
+  if ((b = g("[data-cd-toggle]"))) { dockOpen = !dockOpen; $("cd-panel").hidden = !dockOpen; drawDock(); return; }
+  if ((b = g("[data-cd-new]"))) { dockPick = true; pickPeople("New message", false); return; }
+  if ((b = g("[data-cd-full]"))) { dockOpen = false; $("cd-panel").hidden = true; A.goto("ws_chat"); return; }
+  if ((b = g("[data-cd-open]"))) { openMini(b.dataset.cdOpen); return; }
+  if ((b = g("[data-cd-close]"))) { MINI = MINI.filter(w => w.id !== b.dataset.cdClose); saveMini(); drawDock(); return; }
+  if ((b = g("[data-cd-expand]"))) { const id = b.dataset.cdExpand; MINI = MINI.filter(w => w.id !== id); saveMini(); A.goto("ws_chat", {channel: id}); return; }
+  if ((b = g("[data-cd-min]")) && !g(".cd-wbtns [data-cd-expand], .cd-wbtns [data-cd-close]")) { const w = MINI.find(x => x.id === b.dataset.cdMin); if (w) { w.min = !w.min; saveMini(); drawDock(); if (!w.min) { const ta = document.querySelector(`.cd-win[data-win="${CSS.escape(w.id)}"] textarea`); if (ta) ta.focus(); } } return; }
+});
+window.addEventListener("resize", () => { if (MINI.length > maxWins()) { MINI = MINI.slice(0, maxWins()); saveMini(); drawDock(); } });
+
+window.WS = {tabs: TABS, draw, start, stop, leave, badges, drawSummary, openMini: id => openMini(id)};
 })();
 

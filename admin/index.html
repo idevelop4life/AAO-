@@ -266,6 +266,38 @@ input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
   .th-back{display:inline-flex}
   .msg{max-width:92%}
 }
+/* corner chat */
+#chat-dock{position:fixed;right:18px;bottom:18px;z-index:60;display:flex;align-items:flex-end;gap:12px;pointer-events:none}
+#chat-dock[hidden]{display:none}
+#chat-dock > *{pointer-events:auto}
+.cd-launch{width:58px;height:58px;border-radius:50%;border:1px solid var(--gold);background:var(--gold-fill);color:var(--on-gold);font-size:26px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.45);position:relative;flex:none}
+.cd-launch:hover{transform:translateY(-1px)}
+.cd-badge{position:absolute;top:-4px;right:-4px;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:#d9534f;color:#fff;font:700 12px/22px var(--body);text-align:center}
+.cd-panel{position:absolute;right:0;bottom:72px;width:340px;max-height:min(520px,70vh);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--gold);box-shadow:0 14px 40px rgba(0,0,0,.5)}
+.cd-panel[hidden]{display:none}
+.cd-phead{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+.cd-list{overflow:auto;flex:1}
+.cd-full{background:none;border:0;border-top:1px solid var(--line);padding:10px;color:var(--gold);cursor:pointer;font:inherit}
+.cd-x,.cd-wbtns button{background:none;border:0;color:var(--text);cursor:pointer;font-size:16px;width:28px;height:28px;line-height:1}
+.cd-x:hover,.cd-wbtns button:hover{color:var(--gold)}
+.cd-wins{display:flex;gap:10px;align-items:flex-end;flex-direction:row-reverse}
+.cd-win{width:310px;height:420px;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--gold);box-shadow:0 14px 40px rgba(0,0,0,.5)}
+.cd-win.min{height:auto}.cd-win.min .cd-body{display:none}
+.cd-win.unread .cd-whead{background:rgba(212,175,55,.18)}
+.cd-whead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 6px 6px 10px;border-bottom:1px solid var(--line);cursor:pointer}
+.cd-who{display:flex;gap:8px;align-items:center;min-width:0}.cd-who strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
+.cd-wbtns{display:flex;flex:none}
+.cd-body{flex:1;display:flex;flex-direction:column;min-height:0}
+.cd-msgs{padding:10px}
+.cd-win .send{padding:6px}.cd-win .send textarea{min-height:38px}.cd-win .emoji-btn{width:38px;height:38px;font-size:18px}
+.cd-win .emoji-pop{left:0;bottom:46px;width:280px}
+.cd-win .msg{max-width:88%}
+@media (max-width:700px){
+  #chat-dock{right:10px;bottom:10px;left:10px;justify-content:flex-end}
+  .cd-panel{width:auto;left:0;right:0;position:fixed;bottom:80px;margin:0 10px}
+  .cd-wins{position:fixed;left:10px;right:10px;bottom:80px}
+  .cd-win{width:100%;height:min(460px,65vh)}
+}
 .invite-list{display:grid;gap:6px;max-height:240px;overflow:auto}
 .inv{display:flex;gap:10px;align-items:center;padding:6px 8px;border:1px solid var(--line);cursor:pointer;min-width:0}
 .inv input{flex:none}
