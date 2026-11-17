@@ -701,7 +701,7 @@ function dockEl(){
       <div class="cd-phead"><strong>Chats</strong><span style="display:flex;gap:6px"><button class="btn ghost sm" type="button" data-cd-new>New message</button><button class="cd-x" type="button" data-cd-toggle aria-label="Close">✕</button></span></div>
       <div class="cd-list" id="cd-list"></div>
       <button class="cd-full" type="button" data-cd-full>Open full chat page</button></div>
-    <button class="cd-launch" type="button" data-cd-toggle aria-label="Chats"><span aria-hidden="true">💬</span><span class="cd-badge" id="cd-badge" hidden></span></button>`;
+    <button class="cd-launch" type="button" data-cd-toggle aria-label="Chats" title="Chats"><img src="/admin/tiger-chat.svg" alt="" width="54" height="54"><span class="cd-badge" id="cd-badge" hidden></span></button>`;
   document.body.appendChild(d); return d;
 }
 function drawDock(){
