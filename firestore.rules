@@ -189,11 +189,20 @@ service cloud.firestore {
     // with Documents access, or only to the people listed in "members". Super admins see everything.
     match /folders/{fid} {
       allow read: if isSuper()
-        || (canDo('ws_docs') && (resource.data.open == true || request.auth.uid in resource.data.members));
-      allow create, update: if isSuper()
-        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
+        || (canDo('ws_docs') && (resource.data.open == true || request.auth.uid in resource.data.members
+            || resource.data.createdBy == request.auth.uid));
+      // Anyone with Documents access can make a folder. They (and super admins) can change or delete it.
+      // A private folder made by an admin must keep that admin in it.
+      allow create: if canDo('ws_docs') && request.resource.data.createdBy == request.auth.uid && validFolder()
+        && (isSuper() || request.resource.data.open == true || request.auth.uid in request.resource.data.members);
+      allow update: if validFolder() && request.resource.data.createdBy == resource.data.createdBy
+        && (isSuper() || (canDo('ws_docs') && resource.data.createdBy == request.auth.uid
+            && (request.resource.data.open == true || request.auth.uid in request.resource.data.members)));
+      allow delete: if isSuper() || (canDo('ws_docs') && resource.data.createdBy == request.auth.uid);
+    }
+    function validFolder() {
+      return request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 60
         && request.resource.data.open is bool && request.resource.data.members is list;
-      allow delete: if isSuper();
     }
 
     // Each file copies its folder's access ("open" and "viewers") so it can be checked quickly.
@@ -211,8 +220,11 @@ service cloud.firestore {
       allow create: if canDo('ws_docs') && request.resource.data.uploadedBy == request.auth.uid
         && request.resource.data.folderId is string && request.resource.data.open is bool && request.resource.data.viewers is list
         && matchesFolder(request.resource.data);
-      allow update: if isSuper()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['folderId', 'folder', 'open', 'viewers']);
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['folderId', 'folder', 'open', 'viewers'])
+        && (isSuper()
+            // the folder's maker can update the access copied onto its files when they change the folder
+            || (canDo('ws_docs') && resource.data.folderId != '' && request.resource.data.folderId == resource.data.folderId
+                && get(folderDoc(resource.data.folderId)).data.createdBy == request.auth.uid));
       allow delete: if isSuper() || (canDo('ws_docs') && resource.data.uploadedBy == request.auth.uid
         && (resource.data.open == true || request.auth.uid in resource.data.viewers));
     }

@@ -507,14 +507,14 @@ function drawDocs(){
   const lock = f => f && !f.open ? ` <span aria-label="private" title="Private folder">🔒</span>` : "";
   const count = id => DOCS.filter(d => fileFolder(d) === id).length;
   content.innerHTML = `<div class="ws-bar"><label class="btn" style="cursor:pointer">+ Upload files<input type="file" multiple hidden data-doc-upload></label>
-      ${isSuper() ? `<button class="btn ghost" type="button" data-new-folder>+ New folder</button>` : ""}
+<button class="btn ghost" type="button" data-new-folder>+ New folder</button>
       <span class="hint">Uploads go into <strong>${esc(target)}</strong></span><span class="hint" id="ws-note"></span></div>
     <div class="progress" id="doc-progress" hidden><i></i></div>
     <div class="chips"><button class="fchip${docFolder === "All" ? " on" : ""}" type="button" data-folder="All">All files</button>
       <button class="fchip${docFolder === "" ? " on" : ""}" type="button" data-folder="">General <span class="hint">${count("")}</span></button>
       ${FOLDERS.map(f => `<button class="fchip${f.id === docFolder ? " on" : ""}" type="button" data-folder="${esc(f.id)}">${esc(f.name)}${lock(f)} <span class="hint">${count(f.id)}</span></button>`).join("")}</div>
     ${docFolder !== "All" ? `<div class="folder-head"><span class="hint">Who can see <strong>${esc(cur ? cur.name : "General")}</strong>: ${esc(folderWho(cur))}</span>
-      ${isSuper() && cur ? `<button class="btn ghost sm" type="button" data-folder-settings="${esc(cur.id)}">Folder settings</button>` : ""}</div>` : ""}
+      ${cur && ownsFolder(cur) ? `<button class="btn ghost sm" type="button" data-folder-settings="${esc(cur.id)}">Folder settings</button>` : ""}</div>` : ""}
     ${list.length ? `<div class="scroll"><table class="tbl"><thead><tr><th>Name</th><th>Folder</th><th>Size</th><th>Added by</th><th></th></tr></thead><tbody>
       ${list.map(d => { const fid = fileFolder(d), f = folderById(fid);
         return `<tr><td><a href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.name)}</a></td>
@@ -524,9 +524,11 @@ function drawDocs(){
         <td>${isSuper() || d.uploadedBy === uid() ? `<button class="btn danger sm" type="button" data-del-doc="${esc(d.id)}">Delete</button>` : ""}</td></tr>`; }).join("")}</tbody></table></div>`
       : `<div class="empty">No documents here yet. Upload briefs, scripts, brand files and anything the team needs.</div>`}`;
 }
+/* Anyone with Documents access can make a folder and decide who sees it. Super admins can change any folder. */
+const ownsFolder = f => isSuper() || f.createdBy === uid();
 function folderForm(f){
   f = f || {open: true, members: []};
-  const people = members().filter(id => person(id).role !== "super_admin" && docsAccess(id));
+  const people = members().filter(id => person(id).role !== "super_admin" && docsAccess(id) && (isSuper() || id !== uid()));
   return `<form data-folder-form="${esc(f.id || "")}" style="display:grid;gap:14px">
     <h3 class="group-title" style="margin-top:0">${f.id ? "Folder settings" : "New folder"}</h3>
     <label class="f"><span>Folder name</span><input type="text" name="fname" maxlength="60" required value="${esc(f.name || "")}" placeholder="e.g. Brand assets"></label>
@@ -535,7 +537,7 @@ function folderForm(f){
       <label class="f check"><input type="radio" name="open" value="0" ${f.open ? "" : "checked"}><span>Only the people I choose</span></label>
       <div class="invite-list" data-folder-people ${f.open ? "hidden" : ""}>${people.length ? people.map(id => `<label class="inv"><input type="checkbox" name="mem" value="${esc(id)}" ${(f.members || []).includes(id) ? "checked" : ""}>${avatar(id, 28)}<span class="inv-t"><strong>${esc(pname(id))}</strong><span class="hint">${esc(person(id).title || person(id).email || "")}</span></span></label>`).join("")
         : `<p class="hint">No admins have Documents access yet. Give it under Users &amp; access.</p>`}</div>
-      <p class="hint" style="margin:0">Super admins can always see every folder.</p></fieldset>
+      <p class="hint" style="margin:0">${isSuper() ? "" : "You'll always see folders you make. "}Super admins can always see every folder.</p></fieldset>
     <div class="row-btns"><button class="btn" type="submit">${f.id ? "Save folder" : "Create folder"}</button>
       ${f.id ? `<button class="btn danger sm" type="button" data-del-folder="${esc(f.id)}">Delete folder</button>` : ""}</div>
     <p class="hint" id="folder-msg" role="status" aria-live="polite"></p></form>`;
@@ -543,6 +545,8 @@ function folderForm(f){
 async function saveFolder(form){
   const id = form.dataset.folderForm, name = form.fname.value.trim().slice(0, 60), open = form.querySelector("[name=open]:checked").value === "1";
   const mem = open ? [] : [...form.querySelectorAll("[name=mem]:checked")].map(i => i.value);
+  const owner = id ? (folderById(id) || {}).createdBy : uid();
+  if (!open && owner && person(owner).role !== "super_admin" && !mem.includes(owner)) mem.push(owner);   /* the maker keeps access */
   if (!name) { $("folder-msg").textContent = "Give the folder a name."; return; }
   form.querySelector("[type=submit]").disabled = true;
   try {
