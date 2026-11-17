@@ -61,3 +61,8 @@ Inside the admin: **Tasks** (board), **Chat** (direct + groups), **Calendar** (w
 | `GMAIL_APP_PASSWORD` | a 16-character Gmail app password (Google Account → Security → App passwords; needs 2-Step Verification) |
 
 Never put the app password in the code.
+
+## Super admin: setting someone's password
+"Email them a reset link" works with no setup. "Set password" needs one Vercel environment variable:
+`FIREBASE_SERVICE_ACCOUNT` = the whole JSON file from Firebase → Project settings → Service accounts →
+Generate new private key. Keep that file private; never commit it or paste it into chat.

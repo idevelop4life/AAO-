@@ -634,7 +634,14 @@ async function drawUsers(){
           <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn ghost sm" type="button" data-perm-all="${esc(u.id)}">Tick all</button><button class="btn ghost sm" type="button" data-perm-none="${esc(u.id)}">Untick all</button></div>
           ${up.length ? "" : `<p class="hint" style="color:var(--gold)">This admin can't use anything yet. Tick what they should have.</p>`}
         </fieldset>` : u.role === "super_admin" && !self ? `<p class="hint">Super admins can edit everything.</p>` : ""}
-        ${self ? "" : `<div><button class="btn danger sm" type="button" data-remove-user="${esc(u.id)}" data-email="${esc(u.email)}">Remove account</button></div>`}
+        ${self ? "" : `<details class="pw-box"><summary>Password</summary>
+          <div style="display:grid;gap:10px;margin-top:10px;max-width:420px">
+            <button class="btn ghost sm" type="button" data-pw-reset="${esc(u.email)}" data-pw-msg="pwm-${esc(u.id)}" style="justify-self:start">Email them a reset link</button>
+            <p class="hint" style="margin:0">Or set a new password yourself, then tell them what it is:</p>
+            <div style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" id="pwi-${esc(u.id)}" minlength="8" maxlength="128" placeholder="New password (8+ characters)" autocomplete="off" style="flex:1;min-width:180px">
+              <button class="btn sm" type="button" data-pw-set="${esc(u.id)}">Set password</button></div>
+            <p class="hint" id="pwm-${esc(u.id)}" role="status" aria-live="polite"></p></div></details>
+          <div><button class="btn danger sm" type="button" data-remove-user="${esc(u.id)}" data-email="${esc(u.email)}">Remove account</button></div>`}
       </div>`; }).join("")}
     <datalist id="cat-list">${CATEGORIES.map(c => `<option value="${esc(c)}">`).join("")}</datalist>`;
   loadMedia(users).then(() => content.querySelectorAll("img[data-avatar-src]").forEach(i => { const s = imgSrc(i.dataset.avatarSrc); if (s) i.src = s; }));
@@ -663,6 +670,29 @@ async function removeUser(btn){
   }
 }
 content.addEventListener("click", e => { const b = e.target.closest("[data-remove-user]"); if (b) removeUser(b); });
+/* Super admin: reset or set someone's password */
+content.addEventListener("click", async e => {
+  const r = e.target.closest("[data-pw-reset]"), st = e.target.closest("[data-pw-set]");
+  if (r) {
+    const m = $(r.dataset.pwMsg); r.disabled = true;
+    try { await auth.sendPasswordResetEmail(r.dataset.pwReset); m.textContent = `Reset link sent to ${r.dataset.pwReset}. They pick their own new password from the email (ask them to check spam).`; }
+    catch { m.textContent = "Couldn't send the reset email. Try again in a minute."; }
+    r.disabled = false;
+  }
+  if (st) {
+    const id = st.dataset.pwSet, inp = $("pwi-" + id), m = $("pwm-" + id), pw = inp.value;
+    if (pw.length < 8) { m.textContent = "Passwords need 8 or more characters."; inp.focus(); return; }
+    st.disabled = true; m.textContent = "Setting password…";
+    try {
+      const res = await fetch("/api/set-password", {method: "POST", headers: {"Content-Type": "application/json", Authorization: "Bearer " + await me.getIdToken()}, body: JSON.stringify({uid: id, password: pw})});
+      const j = await res.json().catch(() => ({}));
+      if (res.ok) { m.textContent = "Password changed. Tell them the new password privately (not in team chat)."; inp.value = ""; }
+      else if (j.error === "not-set-up") m.textContent = "Setting passwords directly isn't switched on yet (it needs a one-time setup in Vercel). Use “Email them a reset link” for now.";
+      else m.textContent = j.error || "That didn't work. Try again.";
+    } catch { m.textContent = "That didn't work. Check your connection and try again."; }
+    st.disabled = false;
+  }
+});
 async function savePerms(uid){
   const list = [...content.querySelectorAll(`[data-perm-for="${CSS.escape(uid)}"]:checked`)].map(i => i.value);
   const msg = $("users-msg"); msg.textContent = "Saving…"; msg.className = "hint";
