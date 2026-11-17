@@ -386,7 +386,25 @@ async function sendMsg(form){
   try {
     await db.collection("channels").doc(id).collection("messages").add({from: uid(), text, at: TS()});
     await db.collection("channels").doc(id).update({lastMessage: text.slice(0, 120), lastAt: TS(), lastFrom: uid(), ["reads." + uid()]: TS()});
+    chatNotify(id, text);
   } catch { ta.value = text; msg("That message didn't send. Check your connection.", true); }
+}
+/* Put new chat messages in the other people's notification bell (in-app only, no email).
+   One notification per burst: skip people who already have unread messages here, or who are
+   in the conversation right now (they read it in the last minute). */
+function chatNotify(id, text){
+  const c = CHANNELS.find(x => x.id === id); if (!c) return;
+  const last = toDate(c.lastAt), now = Date.now();
+  const preview = text.length > 80 ? text.slice(0, 77) + "…" : text;
+  const line = c.type === "group" ? `${myLabel()} in ${c.name || "a group"}: “${preview}”` : `${myLabel()} sent you a message: “${preview}”`;
+  (c.members || []).filter(m => m !== uid()).forEach(m => {
+    const read = toDate(c.reads && c.reads[m]);
+    const hasUnread = c.lastFrom && c.lastFrom !== m && last && (!read || read < last);
+    const activeNow = read && now - read.getTime() < 60000;
+    if (hasUnread || activeNow) return;
+    db.collection("notifications").doc(m).collection("items")
+      .add({text: line.slice(0, 300), link: {tab: "ws_chat", channel: id}, from: uid(), read: false, createdAt: TS()}).catch(() => {});
+  });
 }
 async function openDM(other){
   const ids = [uid(), other].sort(), id = "dm_" + ids.join("_"), ref = db.collection("channels").doc(id);
