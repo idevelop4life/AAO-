@@ -10,14 +10,14 @@ const toDate = t => t && t.toDate ? t.toDate() : (t ? new Date(t) : null);
 const uid = () => A.me && A.me.uid;
 const isSuper = () => A.role === "super_admin";
 
-const TABS = {ws_tasks: "Tasks", ws_chat: "Chat", ws_calendar: "Calendar", ws_docs: "Documents", ws_team: "Team"};
+const TABS = {ws_notices: "Notices", ws_tasks: "Tasks", ws_chat: "Chat", ws_calendar: "Calendar", ws_docs: "Documents", ws_team: "Team"};
 const STATUSES = [["idea", "Ideas"], ["todo", "To do"], ["doing", "In progress"], ["review", "Review"], ["scheduled", "Scheduled"], ["done", "Done"]];
 const PLATFORMS = [["Instagram", "IG"], ["TikTok", "TT"], ["X", "X"], ["YouTube", "YT"], ["Facebook", "FB"], ["LinkedIn", "IN"], ["Threads", "TH"], ["Website", "WEB"], ["Newsletter", "NL"]];
 const platShort = p => (PLATFORMS.find(x => x[0] === p) || [p, p])[1];
 const PRIORITIES = [["high", "High"], ["med", "Medium"], ["low", "Low"]];
 const TYPES = ["Content", "Video", "Design", "Social", "Website", "Admin", "Other"];
 
-let PEOPLE = {}, TASKS = [], CHANNELS = [], NOTES = [], EVENTS = [], DOCS = [], FOLDERS = [], migrated = false;
+let NOTICES = [], PEOPLE = {}, TASKS = [], CHANNELS = [], NOTES = [], EVENTS = [], DOCS = [], FOLDERS = [], migrated = false;
 let subs = [], viewSubs = [], current = null;
 let pendingChannel = null, pendingEvent = null, pendingEventNew = false, pendingTask = null;
 let taskFilter = "all", openChannel = null, calMonth = (d => new Date(d.getFullYear(), d.getMonth(), 1))(new Date()), docFolder = "All";
@@ -99,6 +99,8 @@ function start(){
     .onSnapshot(s => { CHANNELS = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => (toDate(b.lastAt) || 0) - (toDate(a.lastAt) || 0)); badges(); refresh("ws_chat"); }, () => {}));
   if (canWS("ws_tasks")) subs.push(db.collection("tasks").orderBy("createdAt", "desc").limit(500)
     .onSnapshot(s => { TASKS = s.docs.map(d => ({id: d.id, ...d.data()})); remLoaded.t = true; badges(); refresh("ws_tasks"); refresh("ws_calendar"); }, () => {}));
+  subs.push(db.collection("notices").orderBy("createdAt", "desc").limit(100)
+    .onSnapshot(s => { NOTICES = s.docs.map(d => ({id: d.id, ...d.data()})); badges(); refresh("ws_notices"); drawNoticeBanner(); }, () => {}));
   if (canWS("ws_calendar")) subs.push(db.collection("events").orderBy("date").limit(500)
     .onSnapshot(s => { EVENTS = s.docs.map(d => ({id: d.id, ...d.data()})); remLoaded.e = true; refresh("ws_calendar"); }, () => {}));
   if (canWS("ws_docs")) {
@@ -253,7 +255,7 @@ document.addEventListener("click", e => { const g = e.target.closest("#me-summar
 
 function badges(){
   const set = (k, n) => document.querySelectorAll(`[data-badge="${k}"]`).forEach(b => b.innerHTML = n ? `<span class="chip">${n}</span>` : "");
-  set("ws_chat", unreadChannels()); set("ws_tasks", myOpenTasks());
+  set("ws_chat", unreadChannels()); set("ws_tasks", myOpenTasks()); set("ws_notices", unreadNotices().length);
 }
 function bell(){
   const n = NOTES.filter(x => !x.read).length, c = $("bell-count");
@@ -283,8 +285,98 @@ document.addEventListener("click", async e => {
 function draw(tab){
   current = tab; drawDock();
   const open = window.__WS_OPEN; window.__WS_OPEN = null;
-  ({ws_tasks: drawTasks, ws_chat: drawChat, ws_calendar: drawCalendar, ws_docs: drawDocs, ws_team: drawTeam})[tab](open);
+  ({ws_notices: drawNotices, ws_tasks: drawTasks, ws_chat: drawChat, ws_calendar: drawCalendar, ws_docs: drawDocs, ws_team: drawTeam})[tab](open);
 }
+
+/* ===== NOTICES (team notice board) =====
+   Everyone on the team reads them. Super admins, and admins given "Post notices", can post, pin and remove.
+   People click "Got it" so the poster can see who has read each notice. */
+const canPost = () => isSuper() || A.perms.includes("ws_notice_post");
+const unreadNotices = () => NOTICES.filter(n => !(n.readBy || []).includes(uid()) && n.by !== uid());
+const noticeSort = (a, b) => (!!b.pinned - !!a.pinned) || ((toDate(b.createdAt) || 0) - (toDate(a.createdAt) || 0));
+function drawNotices(){
+  const list = [...NOTICES].sort(noticeSort), team = members();
+  content.innerHTML = `<div class="ws-bar">${canPost() ? `<button class="btn" type="button" data-new-notice>+ Post a notice</button>` : ""}<span class="hint" id="ws-note">${canPost() ? "" : "Notices from the team leads appear here."}</span></div>
+    <div class="notices">${list.map(n => { const read = (n.readBy || []).includes(uid()) || n.by === uid(), seen = (n.readBy || []).filter(id => id !== n.by && PEOPLE[id]);
+      return `<article class="notice-card${n.important ? " imp" : ""}${n.pinned ? " pinned" : ""}${read ? "" : " unread"}">
+        <header><span class="nc-tags">${n.pinned ? `<span class="chip">📌 Pinned</span>` : ""}${n.important ? `<span class="chip imp-chip">Important</span>` : ""}${read ? "" : `<span class="chip">New</span>`}</span>
+          <h3>${esc(n.title)}</h3><p class="hint" style="margin:0">${avatar(n.by, 20)} ${esc(pname(n.by))} · ${esc(when(n.createdAt))}${n.editedAt ? " · edited" : ""}</p></header>
+        <div class="nc-body">${esc(n.body || "").replace(/\n/g, "<br>")}</div>
+        ${noticeMediaHTML(n.media)}
+        <footer>${read ? `<span class="hint">✓ ${n.by === uid() ? "You posted this" : "You've read this"}</span>` : `<button class="btn sm" type="button" data-notice-read="${esc(n.id)}">Got it</button>`}
+          ${n.by === uid() || isSuper() ? `<span class="hint" title="${esc(seen.map(pname).join(", "))}">Seen by ${seen.length} of ${Math.max(0, team.length - 1)}</span>` : ""}
+          ${canPost() && (n.by === uid() || isSuper()) ? `<span class="nc-admin"><button class="btn ghost sm" type="button" data-notice-pin="${esc(n.id)}">${n.pinned ? "Unpin" : "Pin"}</button><button class="btn ghost sm" type="button" data-notice-edit="${esc(n.id)}">Edit</button><button class="btn danger sm" type="button" data-notice-del="${esc(n.id)}">Delete</button></span>` : ""}</footer></article>`; }).join("")
+      || `<div class="empty">No notices yet.${canPost() ? " Post updates, policies, schedules or announcements for the whole team." : ""}</div>`}</div>`;
+}
+const isVid = m => /^video\//.test(m.type || "") || /\.(mp4|mov|m4v|webm)$/i.test(m.name || "");
+const isImg = m => /^image\//.test(m.type || "");
+function noticeMediaHTML(media){
+  if (!(media || []).length) return "";
+  return `<div class="nc-media">${media.map(m => isVid(m) ? `<video controls playsinline preload="metadata" src="${esc(m.url)}#t=0.1"></video>`
+    : isImg(m) ? `<a href="${esc(m.url)}" target="_blank" rel="noopener"><img src="${esc(m.url)}" alt="${esc(m.name)}" loading="lazy"></a>`
+    : `<a class="att" href="${esc(m.url)}" target="_blank" rel="noopener">📄 ${esc(m.name)}</a>`).join("")}</div>`;
+}
+let noticeKeep = [];
+function noticeForm(n = {}){
+  noticeKeep = [...(n.media || [])];
+  return `<form class="ws-form" data-notice-form="${esc(n.id || "")}"><h3 class="group-title" style="margin-top:0">${n.id ? "Edit notice" : "Post a notice"}</h3>
+    <label class="f"><span>Title</span><input type="text" name="title" maxlength="140" required value="${esc(n.title || "")}" placeholder="e.g. Content schedule for December"></label>
+    <label class="f"><span>Message</span><textarea name="body" maxlength="5000" rows="7" required placeholder="What does everyone need to know?">${esc(n.body || "")}</textarea></label>
+    <div class="grid2"><label class="f check"><input type="checkbox" name="important" ${n.important ? "checked" : ""}><span>Mark as important</span></label>
+      <label class="f check"><input type="checkbox" name="pinned" ${n.pinned ? "checked" : ""}><span>Pin to the top</span></label></div>
+    <fieldset class="perm-box"><legend>Videos, photos &amp; files</legend>
+      <div id="notice-keep">${noticeKeepHTML()}</div>
+      <label class="btn ghost sm" style="cursor:pointer;justify-self:start">Add MP4, photo or file<input type="file" name="media" multiple hidden accept="video/mp4,video/quicktime,video/*,image/*,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"></label>
+      <p class="hint" id="notice-picked" style="margin:0">Videos up to 200 MB play right inside the notice.</p>
+      <div class="progress" id="notice-progress" hidden><i></i></div></fieldset>
+    ${n.id ? "" : `<p class="hint" style="margin:0">Everyone on the team gets a notification${n.id ? "" : " (and an email, once email is set up)"}.</p>`}
+    <div class="row-btns"><button class="btn" type="submit">${n.id ? "Save" : "Post notice"}</button><button class="btn ghost" type="button" data-close-modal>Cancel</button></div></form>`;
+}
+function noticeKeepHTML(){ return noticeKeep.map((m, i) => `<div class="att">${isVid(m) ? "🎬" : isImg(m) ? "🖼️" : "📄"} ${esc(m.name)}<button class="x-del" type="button" data-keep-del="${i}" aria-label="Remove">✕</button></div>`).join(""); }
+async function saveNotice(form){
+  const id = form.dataset.noticeForm, title = form.title.value.trim().slice(0, 140), body = form.body.value.trim().slice(0, 5000);
+  if (!title || !body) return;
+  const btn = form.querySelector("[type=submit]"); btn.disabled = true;
+  const media = [...noticeKeep], files = [...(form.media.files || [])], bar = $("notice-progress");
+  for (const file of files) {
+    if (file.size > 200 * 1024 * 1024) { msg(`${file.name} is over 200 MB and was skipped.`, true); continue; }
+    const path = `workspace/notices/${Date.now()}-${file.name.replace(/[^\w.\- ]+/g, "_").slice(0, 100)}`, ref = storage.ref(path);
+    try {
+      bar.hidden = false;
+      const up = ref.put(file, {contentType: file.type || (/\.mp4$/i.test(file.name) ? "video/mp4" : "application/octet-stream")});
+      up.on("state_changed", s => { const p = Math.round(s.bytesTransferred / s.totalBytes * 100); bar.firstElementChild.style.width = p + "%"; $("notice-picked").textContent = `Uploading ${file.name}… ${p}%`; });
+      await up; media.push({name: file.name.slice(0, 160), url: await ref.getDownloadURL(), path, type: file.type || "", size: file.size});
+    } catch { msg(`${file.name} didn't upload. Make sure the latest Storage rules are published.`, true); }
+  }
+  bar.hidden = true;
+  const data = {title, body, important: form.important.checked, pinned: form.pinned.checked, media: media.slice(0, 12)};
+  try {
+    if (id) await db.collection("notices").doc(id).update({...data, editedAt: TS()});
+    else {
+      const ref = await db.collection("notices").add({...data, by: uid(), readBy: [uid()], createdAt: TS()});
+      members().filter(m => m !== uid()).forEach(m => notify(m, `📢 ${data.important ? "Important: " : ""}${myLabel()} posted "${title}"`, {tab: "ws_notices", id: ref.id}));
+    }
+    closeModal(); msg(id ? "Notice updated." : "Notice posted.");
+  } catch { msg("That notice didn't save. Make sure the latest database rules are published.", true); btn.disabled = false; }
+}
+function drawNoticeBanner(){
+  const box = $("me-notice"); if (!box) return;
+  const n = unreadNotices().sort(noticeSort)[0];
+  box.innerHTML = n ? `<div class="notice notice-banner${n.important ? " imp" : ""}"><strong>📢 ${esc(n.title)}</strong> <span class="hint">from ${esc(pname(n.by))}</span>
+    <div class="row-btns" style="margin-top:8px"><button class="btn sm" type="button" data-go-notices>Read notice${unreadNotices().length > 1 ? `s (${unreadNotices().length})` : ""}</button></div></div>` : "";
+}
+document.addEventListener("click", async e => {
+  const g = s => e.target.closest(s); let b;
+  if (g("[data-go-notices]")) { A.goto("ws_notices"); return; }
+  if ((b = g("[data-keep-del]"))) { noticeKeep.splice(+b.dataset.keepDel, 1); $("notice-keep").innerHTML = noticeKeepHTML(); return; }
+  if (g("[data-new-notice]")) { modal(noticeForm(), true); return; }
+  if ((b = g("[data-notice-edit]"))) { modal(noticeForm(NOTICES.find(n => n.id === b.dataset.noticeEdit)), true); return; }
+  if ((b = g("[data-notice-read]"))) { try { await db.collection("notices").doc(b.dataset.noticeRead).update({readBy: [...new Set([...(NOTICES.find(n => n.id === b.dataset.noticeRead).readBy || []), uid()])]}); } catch { msg("Couldn't mark it as read.", true); } return; }
+  if ((b = g("[data-notice-pin]"))) { const n = NOTICES.find(x => x.id === b.dataset.noticePin); try { await db.collection("notices").doc(n.id).update({pinned: !n.pinned}); } catch { msg("That didn't save.", true); } return; }
+  if ((b = g("[data-notice-del]"))) { confirmThen(b, async () => { try { await db.collection("notices").doc(b.dataset.noticeDel).delete(); msg("Notice deleted."); } catch { msg("Couldn't delete it.", true); } }); return; }
+});
+document.addEventListener("submit", e => { if (e.target.matches("[data-notice-form]")) { e.preventDefault(); saveNotice(e.target); } });
+document.addEventListener("change", e => { const f = e.target.closest("[data-notice-form] [name=media]"); if (f) $("notice-picked").textContent = f.files.length ? `Ready to upload: ${[...f.files].map(x => x.name).join(", ")}` : "Videos up to 200 MB play right inside the notice."; });
 
 /* ===== TASKS ===== */
 function visibleTasks(){
@@ -962,6 +1054,6 @@ document.addEventListener("click", e => {
 });
 window.addEventListener("resize", () => { if (MINI.length > maxWins()) { MINI = MINI.slice(0, maxWins()); saveMini(); drawDock(); } });
 
-window.WS = {tabs: TABS, draw, start, stop, leave, badges, drawSummary, openMini: id => openMini(id)};
+window.WS = {tabs: TABS, draw, start, stop, leave, badges, drawSummary, drawNoticeBanner, openMini: id => openMini(id)};
 })();
 

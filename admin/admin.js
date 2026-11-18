@@ -38,9 +38,9 @@ const storage = (CFG.storageBucket && firebase.storage) ? firebase.storage() : n
 
 /* Sections a super admin can grant to an admin. Content keys match the website data. */
 const PERM_LABELS = [["profile","Homepage intro"],["socials","Social links"],["about","About"],["building","Building"],["interests","Interests"],["gallery","Gallery"],["thoughts","Thoughts"],["quote","Quotes"],["journal","Journal"],["subscribe","Subscribe"],["sections","Show / hide"],["replies","Replies"],["subscribers","Subscribers"]];
-const WS_PERMS = [["ws_tasks","Tasks"],["ws_assign","Assign tasks to others"],["ws_chat","Chat"],["ws_calendar","Calendar"],["ws_docs","Documents"]];
+const WS_PERMS = [["ws_tasks","Tasks"],["ws_assign","Assign tasks to others"],["ws_chat","Chat"],["ws_calendar","Calendar"],["ws_docs","Documents"],["ws_notice_post","Post notices"]];
 const ALL_PERMS = [...PERM_LABELS, ...WS_PERMS];
-const can = k => role === "super_admin" || (k === "ws_team" ? perms.some(p => p.startsWith("ws_")) : perms.includes(k));
+const can = k => role === "super_admin" || k === "ws_notices" || (k === "ws_team" ? perms.some(p => p.startsWith("ws_")) : perms.includes(k));   /* everyone reads notices */
 const CATEGORIES = ["Content Writer","Video Editor","Graphic Designer","Social Media Manager","Photographer","Developer","Marketing","Operations","Assistant"];
 
 /* ---------------- auth ---------------- */
@@ -806,7 +806,7 @@ function paintMe(){
 }
 document.addEventListener("click", e => { if (e.target.closest("[data-open-profile]")) { e.preventDefault(); $("side").classList.remove("open"); window.__ADMIN.goto("account"); } });
 function drawAccount(){
-  setTimeout(() => { const s = $("me-avatar"); if (s) { s.innerHTML = avatarHTML({name: myName, email: me.email, photo: myPhoto}, 84); loadMedia({p: myPhoto}).then(() => { const i = s.querySelector("img"); if (i) i.src = imgSrc(myPhoto); }); } if (window.WS) WS.drawSummary(); drawApprovals(); }, 0);
+  setTimeout(() => { const s = $("me-avatar"); if (s) { s.innerHTML = avatarHTML({name: myName, email: me.email, photo: myPhoto}, 84); loadMedia({p: myPhoto}).then(() => { const i = s.querySelector("img"); if (i) i.src = imgSrc(myPhoto); }); } if (window.WS) { WS.drawSummary(); WS.drawNoticeBanner(); } drawApprovals(); }, 0);
   const first = (myName || "").split(" ")[0];
   const wsHave = WS_PERMS.filter(([k]) => can(k)).map(([,l]) => l), siteHave = PERM_LABELS.filter(([k]) => can(k)).map(([,l]) => l);
   const chips = l => l.map(x => `<span class="chip muted">${esc(x)}</span>`).join(" ");
@@ -821,6 +821,7 @@ function drawAccount(){
       </div>
     </section>
     <p class="hint" style="max-width:640px">This is your home in the admin. It shows what's waiting for you and what you have access to. Use the menu to get to your work.</p>
+    <div id="me-notice"></div>
     <div id="me-approvals"></div>
     <div id="me-summary"></div>
     <h3 class="group-title">What you can use</h3>

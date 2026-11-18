@@ -180,6 +180,19 @@ service cloud.firestore {
     }
 
     // Calendar
+    // Notice board: everyone on the team reads. Super admins and admins with "Post notices" post and manage.
+    // Anyone can add themselves to readBy ("Got it").
+    match /notices/{id} {
+      allow read: if isStaff();
+      allow create: if canDo('ws_notice_post') && request.resource.data.by == request.auth.uid
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 140
+        && request.resource.data.body is string && request.resource.data.body.size() <= 5000;
+      allow update: if (canDo('ws_notice_post') && (resource.data.by == request.auth.uid || isSuper())
+            && request.resource.data.by == resource.data.by)
+        || (isStaff() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readBy'])
+            && request.resource.data.readBy.toSet() == resource.data.readBy.toSet().union([request.auth.uid].toSet()));
+      allow delete: if isSuper() || (canDo('ws_notice_post') && resource.data.by == request.auth.uid);
+    }
     match /events/{id} {
       allow read: if canDo('ws_calendar');
       allow create: if canDo('ws_calendar') && request.resource.data.createdBy == request.auth.uid
