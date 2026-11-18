@@ -3,29 +3,13 @@
    Firebase -> Project settings -> Service accounts -> Generate new private key). Until it's set this does nothing.
    Security: the caller's Firebase sign-in is checked with Google, and their role is read from Firestore as
    them, so only a super admin gets through. No extra packages are needed. */
-const crypto = require("crypto");
-
+const {serviceAccount, googleToken, PROJECT} = require("./_google");
 const API_KEY = process.env.FIREBASE_API_KEY || "AIzaSyA3koDeC2XMSgkpz_zuJamd9orGBNczD2s";
-const PROJECT = process.env.FIREBASE_PROJECT_ID || "aao---project";
-const b64url = b => Buffer.from(b).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
-
-async function googleToken(sa){
-  const now = Math.floor(Date.now() / 1000);
-  const head = b64url(JSON.stringify({alg: "RS256", typ: "JWT"}));
-  const claim = b64url(JSON.stringify({iss: sa.client_email, scope: "https://www.googleapis.com/auth/identitytoolkit https://www.googleapis.com/auth/cloud-platform",
-    aud: "https://oauth2.googleapis.com/token", iat: now, exp: now + 3600}));
-  const sig = b64url(crypto.createSign("RSA-SHA256").update(`${head}.${claim}`).sign(sa.private_key));
-  const r = await fetch("https://oauth2.googleapis.com/token", {method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"},
-    body: new URLSearchParams({grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${head}.${claim}.${sig}`})});
-  if (!r.ok) throw new Error("token");
-  return (await r.json()).access_token;
-}
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({error: "Use POST"});
-  let sa;
-  try { sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || ""); } catch { sa = null; }
-  if (!sa || !sa.private_key || !sa.client_email) return res.status(503).json({error: "not-set-up"});
+  const sa = serviceAccount();
+  if (!sa) return res.status(503).json({error: "not-set-up"});
 
   let body = req.body || {};
   if (typeof body === "string") { try { body = JSON.parse(body); } catch { body = {}; } }

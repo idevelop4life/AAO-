@@ -66,3 +66,12 @@ Never put the app password in the code.
 "Email them a reset link" works with no setup. "Set password" needs one Vercel environment variable:
 `FIREBASE_SERVICE_ACCOUNT` = the whole JSON file from Firebase → Project settings → Service accounts →
 Generate new private key. Keep that file private; never commit it or paste it into chat.
+
+## Daily reminder emails
+`/api/reminders` runs every morning (see `vercel.json`, 11:00 UTC). Each person gets one email with their overdue
+tasks, what's due, today's events (in their own time zone), content going out today and tasks waiting for their review.
+Needs Vercel environment variables: `CRON_SECRET` (any long random text), `GMAIL_USER`, `GMAIL_APP_PASSWORD`,
+`FIREBASE_SERVICE_ACCOUNT`. In-app reminders in the bell work without any of these.
+
+## Storage rules
+Task attachments live under `workspace/tasks/` and need the latest `storage.rules` published.

@@ -68,7 +68,7 @@ service cloud.firestore {
           && request.resource.data.role in ['pending', 'admin', 'super_admin']
           && request.resource.data.get('perms', []) is list)
         || (signedIn() && request.auth.uid == uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo', 'status', 'statusText', 'lastSeen', 'email', 'emailRequest'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo', 'status', 'statusText', 'lastSeen', 'email', 'emailRequest', 'tz'])
           && (request.resource.data.email == resource.data.email
               || (request.resource.data.email == request.auth.token.email && request.resource.data.email == resource.data.get('emailApproved', '')))
           && (!('emailRequest' in request.resource.data) || request.resource.data.emailRequest.email is string)
@@ -76,7 +76,7 @@ service cloud.firestore {
           && request.resource.data.get('statusText', '') is string && request.resource.data.get('statusText', '').size() <= 60
           && request.resource.data.get('name', '') is string && request.resource.data.get('name', '').size() <= 80)
         || (isSuper() && request.auth.uid == uid
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo', 'title', 'status', 'statusText', 'lastSeen', 'email', 'emailApproved', 'emailRequest'])
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'photo', 'title', 'status', 'statusText', 'lastSeen', 'email', 'emailApproved', 'emailRequest', 'tz'])
           && (request.resource.data.email == resource.data.email || request.resource.data.email == request.auth.token.email));
 
       // Super admins can remove other people's access records (never their own).
@@ -141,7 +141,7 @@ service cloud.firestore {
             && (request.resource.data.assignee == resource.data.assignee || request.resource.data.assignee == request.auth.uid
                 || canAssign() || isSuperUser(request.resource.data.assignee)))
           || (resource.data.assignee == request.auth.uid
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'checklist', 'files', 'links']))
           || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']));
       allow delete: if isSuper() || (canDo('ws_tasks') && resource.data.reporter == request.auth.uid);
 

@@ -11,7 +11,9 @@ const uid = () => A.me && A.me.uid;
 const isSuper = () => A.role === "super_admin";
 
 const TABS = {ws_tasks: "Tasks", ws_chat: "Chat", ws_calendar: "Calendar", ws_docs: "Documents", ws_team: "Team"};
-const STATUSES = [["todo", "To do"], ["doing", "In progress"], ["review", "Review"], ["done", "Done"]];
+const STATUSES = [["idea", "Ideas"], ["todo", "To do"], ["doing", "In progress"], ["review", "Review"], ["scheduled", "Scheduled"], ["done", "Done"]];
+const PLATFORMS = [["Instagram", "IG"], ["TikTok", "TT"], ["X", "X"], ["YouTube", "YT"], ["Facebook", "FB"], ["LinkedIn", "IN"], ["Threads", "TH"], ["Website", "WEB"], ["Newsletter", "NL"]];
+const platShort = p => (PLATFORMS.find(x => x[0] === p) || [p, p])[1];
 const PRIORITIES = [["high", "High"], ["med", "Medium"], ["low", "Low"]];
 const TYPES = ["Content", "Video", "Design", "Social", "Website", "Admin", "Other"];
 
@@ -43,6 +45,27 @@ const canAssign = () => isSuper() || A.perms.includes("ws_assign");
 const members = () => Object.entries(PEOPLE).filter(([, p]) => p.role === "admin" || p.role === "super_admin").map(([id]) => id);
 const assignable = () => canAssign() ? members() : members().filter(id => id === uid() || person(id).role === "super_admin");
 const when = t => { const d = toDate(t); return !d || isNaN(d) ? "" : d.toLocaleString("en-US", {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"}); };
+/* Time zones: each event remembers the creator's time zone and its exact moment (startAt/endAt, UTC).
+   Everyone sees it in their own time zone. Older events without a zone were made in New York time. */
+const MY_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York"; } catch { return "America/New_York"; } })();
+const tzCity = tz => String(tz || "").split("/").pop().replace(/_/g, " ");
+function tzOffsetMin(ms, tz){
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", {timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit"}).formatToParts(new Date(ms)).map(x => [x.type, x.value]));
+  return (Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - ms) / 60000;
+}
+function zonedToUtc(date, time, tz){
+  const [y, mo, d] = date.split("-").map(Number), [h, mi] = (time || "00:00").split(":").map(Number);
+  const guess = Date.UTC(y, mo - 1, d, h, mi); let t = guess - tzOffsetMin(guess, tz) * 60000;
+  const t2 = guess - tzOffsetMin(t, tz) * 60000; return t2;
+}
+const timed = ev => !ev.allDay && !!ev.start;
+const evStartMs = ev => !timed(ev) ? null : ev.startAt ? Date.parse(ev.startAt) : zonedToUtc(ev.date, ev.start, ev.tz || "America/New_York");
+const evEndMs = ev => { if (!timed(ev)) return null; if (ev.endAt) return Date.parse(ev.endAt); const s = evStartMs(ev); let e = zonedToUtc(ev.date, ev.end || ev.start, ev.tz || "America/New_York"); if (e < s) e += 864e5; return e; };
+const evDay = ev => timed(ev) ? dayStr(new Date(evStartMs(ev))) : ev.date;           /* the day it falls on for *you* */
+const hm = ms => new Date(ms).toLocaleTimeString("en-US", {hour: "numeric", minute: "2-digit"});
+const hm24 = ms => { const d = new Date(ms); return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
+const evTime = ev => timed(ev) ? hm(evStartMs(ev)) : "";
+const evSortKey = ev => timed(ev) ? new Date(evStartMs(ev)).toISOString() : ev.date + "T00";
 const dayStr = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const fmtDay = s => { if (!s) return ""; const d = new Date(s + "T12:00:00"); return isNaN(d) ? s : d.toLocaleDateString("en-US", {month: "short", day: "numeric"}); };
 const fmtSize = n => n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB";
@@ -68,16 +91,16 @@ async function resolvePhotos(){
 function start(){
   stop();
   if (!uid()) return;
-  subs.push(db.collection("users").onSnapshot(s => { PEOPLE = {}; s.docs.forEach(d => PEOPLE[d.id] = d.data()); resolvePhotos(); drawBubble(); refresh(); }, () => {}));
+  subs.push(db.collection("users").onSnapshot(s => { PEOPLE = {}; s.docs.forEach(d => PEOPLE[d.id] = d.data()); resolvePhotos(); drawBubble(); saveMyTz(); refresh(); }, () => {}));
   subs.push(db.collection("notifications").doc(uid()).collection("items").orderBy("createdAt", "desc").limit(40)
     .onSnapshot(s => { NOTES = s.docs.map(d => ({id: d.id, ...d.data()})); bell(); }, () => {}));
   /* Super admins see every conversation (including other people's private chats); everyone else only their own. */
   if (canWS("ws_chat")) subs.push((isSuper() ? db.collection("channels") : db.collection("channels").where("members", "array-contains", uid()))
     .onSnapshot(s => { CHANNELS = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a, b) => (toDate(b.lastAt) || 0) - (toDate(a.lastAt) || 0)); badges(); refresh("ws_chat"); }, () => {}));
   if (canWS("ws_tasks")) subs.push(db.collection("tasks").orderBy("createdAt", "desc").limit(500)
-    .onSnapshot(s => { TASKS = s.docs.map(d => ({id: d.id, ...d.data()})); badges(); refresh("ws_tasks"); refresh("ws_calendar"); }, () => {}));
+    .onSnapshot(s => { TASKS = s.docs.map(d => ({id: d.id, ...d.data()})); remLoaded.t = true; badges(); refresh("ws_tasks"); refresh("ws_calendar"); }, () => {}));
   if (canWS("ws_calendar")) subs.push(db.collection("events").orderBy("date").limit(500)
-    .onSnapshot(s => { EVENTS = s.docs.map(d => ({id: d.id, ...d.data()})); refresh("ws_calendar"); }, () => {}));
+    .onSnapshot(s => { EVENTS = s.docs.map(d => ({id: d.id, ...d.data()})); remLoaded.e = true; refresh("ws_calendar"); }, () => {}));
   if (canWS("ws_docs")) {
     /* Super admins see every folder and file. Everyone else only gets folders/files that are open to all,
        or that list them; the database rules enforce the same thing. */
@@ -98,8 +121,14 @@ function start(){
   }
   $("bell").hidden = false; $("me-bubble-wrap").hidden = false;
   beat(); clearInterval(beatTimer); beatTimer = setInterval(beat, 4 * 60 * 1000);
+  clearInterval(remTimer); remTimer = setInterval(() => runReminders(true), 5 * 60 * 1000);
 }
 let beatTimer = null;
+let tzSaved = false;
+function saveMyTz(){
+  if (tzSaved || !uid() || !PEOPLE[uid()]) return; tzSaved = true;
+  if (PEOPLE[uid()].tz !== MY_TZ) db.collection("users").doc(uid()).update({tz: MY_TZ}).catch(() => {});
+}
 function beat(){ if (uid() && document.visibilityState !== "hidden") db.collection("users").doc(uid()).update({lastSeen: TS()}).catch(() => {}); }
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") beat(); });
 function drawBubble(){
@@ -127,10 +156,10 @@ document.addEventListener("click", e => {
   if (m && e.target.closest("#me-menu [data-open-profile], #me-menu a")) m.hidden = true;
 });
 document.addEventListener("submit", e => { const f = e.target.closest("[data-status-note]"); if (!f) return; e.preventDefault(); setStatus({statusText: f.note.value.trim().slice(0, 60)}); f.querySelector("button").textContent = "Saved"; });
-function stop(){ removeDock(); subs.forEach(u => u()); subs = []; leave(); clearInterval(beatTimer); const b = $("bell"); if (b) b.hidden = true; const w = $("me-bubble-wrap"); if (w) w.hidden = true; }
+function stop(){ clearInterval(remTimer); removeDock(); subs.forEach(u => u()); subs = []; leave(); clearInterval(beatTimer); const b = $("bell"); if (b) b.hidden = true; const w = $("me-bubble-wrap"); if (w) w.hidden = true; }
 function leave(){ viewSubs.forEach(u => u()); viewSubs = []; current = null; if (typeof drawDock === "function") drawDock(); }
 function refresh(k){
-  drawSummary(); drawDock();
+  drawSummary(); drawDock(); drawExtras(); runReminders();
   if (current === "ws_tasks" && pendingTask && TASKS.find(t => t.id === pendingTask) && !$("ws-modal")) { const id = pendingTask; pendingTask = null; openTask(id); return; }
   if (!current || (k && current !== k)) return;
   if (current === "ws_chat") {                                    /* never rebuild an open conversation */
@@ -157,10 +186,43 @@ const EMOJI = [
 const isCreator = t => t.reporter === uid();
 const canMove = t => isCreator(t) || t.assignee === uid();
 const myOpenTasks = () => TASKS.filter(t => t.assignee === uid() && t.status !== "done").length;
+/* ===== REMINDERS (in the bell) =====
+   Checked while the admin is open: your tasks due tomorrow / today / overdue, content going out today,
+   and events you're invited to starting within the hour or tomorrow. Each reminder is sent once.
+   A daily email summary is sent separately by /api/reminders once email is set up. */
+let remLast = 0, remDone = new Set();
+try { remDone = new Set(JSON.parse(sessionStorage.getItem("rem-done") || "[]")); } catch {}
+async function remind(rid, text, link){
+  if (remDone.has(rid)) return; remDone.add(rid); try { sessionStorage.setItem("rem-done", JSON.stringify([...remDone].slice(-300))); } catch {}
+  const ref = db.collection("notifications").doc(uid()).collection("items").doc(rid);
+  try { if (!(await ref.get()).exists) await ref.set({text: text.slice(0, 300), link, from: uid(), read: false, createdAt: TS()}); } catch {}
+}
+const remLoaded = {t: false, e: false};
+function runReminders(force){
+  if (!uid() || (canWS("ws_tasks") && !remLoaded.t) || (canWS("ws_calendar") && !remLoaded.e)) return;   /* wait for data */
+  if (!force && Date.now() - remLast < 4 * 60 * 1000) return; remLast = Date.now();
+  const today = dayStr(new Date()), tomorrow = dayStr(new Date(Date.now() + 864e5)), now = Date.now();
+  if (canWS("ws_tasks")) TASKS.filter(t => t.assignee === uid() && t.status !== "done").forEach(t => {
+    const link = {tab: "ws_tasks", id: t.id};
+    if (t.due === tomorrow) remind(`rem_due1_${t.id}_${t.due}`, `⏰ "${t.title}" is due tomorrow`, link);
+    else if (t.due === today) remind(`rem_due0_${t.id}_${t.due}`, `⏰ "${t.title}" is due today`, link);
+    else if (t.due && t.due < today) remind(`rem_over_${t.id}_${today}`, `⚠️ "${t.title}" is overdue (was due ${fmtDay(t.due)})`, link);
+    if (t.postDate === today && t.status !== "idea") remind(`rem_post_${t.id}_${t.postDate}`, `📣 "${t.title}" goes out today${(t.platforms || []).length ? " on " + t.platforms.join(", ") : ""}`, link);
+  });
+  if (canWS("ws_calendar")) EVENTS.filter(e => (e.attendees || []).includes(uid())).forEach(e => {
+    const link = {tab: "ws_calendar", event: e.id};
+    if (timed(e)) { const st = evStartMs(e), mins = (st - now) / 60000;
+      if (mins > 0 && mins <= 60) remind(`rem_ev_${e.id}_${st}`, `📅 "${e.title}" starts at ${hm(st)} (in ${Math.max(1, Math.round(mins))} min)`, link);
+      else if (evDay(e) === tomorrow) remind(`rem_ev1_${e.id}_${st}`, `📅 Tomorrow: "${e.title}" at ${hm(st)}`, link);
+    } else if (e.date === tomorrow) remind(`rem_ev1_${e.id}_${e.date}`, `📅 Tomorrow: "${e.title}" (all day)`, link);
+  });
+}
+let remTimer = null;
+
 /* "Your week" on My profile */
 function summaryHTML(){
   if (!uid()) return "";
-  const today = new Date().toISOString().slice(0, 10), soon = new Date(Date.now() + 14 * 864e5).toISOString().slice(0, 10);
+  const today = dayStr(new Date()), soon = dayStr(new Date(Date.now() + 14 * 864e5));
   const cards = [];
   if (canWS("ws_tasks")) {
     const mine = TASKS.filter(t => t.assignee === uid() && t.status !== "done").sort((a, b) => (a.due || "9") < (b.due || "9") ? -1 : 1);
@@ -173,9 +235,9 @@ function summaryHTML(){
       <button class="btn ghost sm" type="button" data-go="ws_tasks">Open Tasks</button></section>`);
   }
   if (canWS("ws_calendar")) {
-    const up = EVENTS.filter(e => e.date >= today && e.date <= soon && (e.attendees || []).includes(uid())).sort((a, b) => (a.date + (a.start || "")) < (b.date + (b.start || "")) ? -1 : 1);
+    const up = EVENTS.filter(e => evDay(e) >= today && evDay(e) <= soon && (e.attendees || []).includes(uid())).sort((a, b) => evSortKey(a).localeCompare(evSortKey(b)));
     cards.push(`<section class="sum-card"><h4>Coming up <span class="chip">${up.length}</span></h4>
-      ${up.slice(0, 3).map(e => `<button class="sum-row" type="button" data-go="ws_calendar"><span>${esc(e.title)}</span><span class="hint">${esc(fmtDay(e.date))}${e.allDay || !e.start ? "" : " · " + esc(e.start)}</span></button>`).join("") || `<p class="hint">No events in the next two weeks.</p>`}
+      ${up.slice(0, 3).map(e => `<button class="sum-row" type="button" data-go="ws_calendar"><span>${esc(e.title)}</span><span class="hint">${esc(fmtDay(evDay(e)))}${timed(e) ? " · " + esc(evTime(e)) : ""}</span></button>`).join("") || `<p class="hint">No events in the next two weeks.</p>`}
       <button class="btn ghost sm" type="button" data-go="ws_calendar">Open Calendar</button></section>`);
   }
   if (canWS("ws_chat")) {
@@ -226,7 +288,9 @@ function draw(tab){
 
 /* ===== TASKS ===== */
 function visibleTasks(){
-  return TASKS.filter(t => taskFilter === "all" || (taskFilter === "mine" && t.assignee === uid()) || (taskFilter === "created" && t.reporter === uid()) || (taskFilter.startsWith("u:") && t.assignee === taskFilter.slice(2)));
+  return TASKS.filter(t => taskFilter === "all" || (taskFilter === "mine" && t.assignee === uid()) || (taskFilter === "created" && t.reporter === uid()) || (taskFilter.startsWith("u:") && t.assignee === taskFilter.slice(2))
+    || (taskFilter === "content" && ((t.platforms || []).length || t.postDate))
+    || (taskFilter.startsWith("p:") && (t.platforms || []).includes(taskFilter.slice(2))));
 }
 function drawTasks(open){
   const list = visibleTasks();
@@ -237,6 +301,8 @@ function drawTasks(open){
         <option value="all" ${taskFilter === "all" ? "selected" : ""}>All tasks</option>
         <option value="mine" ${taskFilter === "mine" ? "selected" : ""}>Assigned to me</option>
         <option value="created" ${taskFilter === "created" ? "selected" : ""}>Created by me</option>
+        <option value="content" ${taskFilter === "content" ? "selected" : ""}>Content only</option>
+        ${PLATFORMS.map(([p]) => `<option value="p:${esc(p)}" ${taskFilter === "p:" + p ? "selected" : ""}>${esc(p)}</option>`).join("")}
         ${members().filter(id => id !== uid()).map(id => `<option value="u:${esc(id)}" ${taskFilter === "u:" + id ? "selected" : ""}>${esc(pname(id))}'s tasks</option>`).join("")}
       </select>
       <span class="hint" id="ws-note"></span>
@@ -246,7 +312,8 @@ function drawTasks(open){
         ${col.map(t => `<button class="card" type="button" draggable="${canMove(t)}" data-task="${esc(t.id)}">
           <span class="card-top"><span class="tchip">${esc(t.type || "Task")}</span><span class="prio p-${esc(t.priority || "med")}" title="${esc((PRIORITIES.find(p => p[0] === t.priority) || PRIORITIES[1])[1])} priority"></span></span>
           <span class="card-title">${esc(t.title)}</span>
-          <span class="card-foot">${avatar(t.assignee, 24)}<span class="hint">${t.due ? "Due " + esc(fmtDay(t.due)) : ""}</span>${t.comments ? `<span class="hint">💬 ${t.comments}</span>` : ""}</span>
+          ${(t.platforms || []).length || t.postDate ? `<span class="card-plat">${(t.platforms || []).map(p => `<span class="pchip" title="${esc(p)}">${esc(platShort(p))}</span>`).join("")}${t.postDate ? `<span class="hint">📣 ${esc(fmtDay(t.postDate))}</span>` : ""}</span>` : ""}
+          <span class="card-foot">${avatar(t.assignee, 24)}<span class="hint">${t.due ? "Due " + esc(fmtDay(t.due)) : ""}</span>${(t.checklist || []).length ? `<span class="hint">☑ ${(t.checklist || []).filter(c => c.done).length}/${t.checklist.length}</span>` : ""}${(t.files || []).length + (t.links || []).length ? `<span class="hint">📎 ${(t.files || []).length + (t.links || []).length}</span>` : ""}${t.comments ? `<span class="hint">💬 ${t.comments}</span>` : ""}</span>
         </button>`).join("") || `<p class="hint empty-col">Nothing here.</p>`}
       </section>`; }).join("")}</div>`;
   if (open && open.id) { if (TASKS.find(t => t.id === open.id)) openTask(open.id); else pendingTask = open.id; }
@@ -262,7 +329,9 @@ function taskForm(t = {}){
       <label class="f"><span>Type</span><select name="type">${TYPES.map(x => `<option ${(t.type || "Content") === x ? "selected" : ""}>${x}</option>`).join("")}</select></label>
       <label class="f"><span>Priority</span><select name="priority">${PRIORITIES.map(([k, l]) => `<option value="${k}" ${(t.priority || "med") === k ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <label class="f"><span>Due date</span><input type="date" name="due" value="${esc(t.due || "")}"></label>
+      <label class="f"><span>Post date <span class="hint">(content)</span></span><input type="date" name="postDate" value="${esc(t.postDate || "")}"></label>
     </div>
+    <fieldset class="perm-box"><legend>Platforms <span class="hint">(for content)</span></legend><div class="plat-pick">${PLATFORMS.map(([p]) => `<label class="f check"><input type="checkbox" name="platforms" value="${esc(p)}" ${(t.platforms || []).includes(p) ? "checked" : ""}><span>${esc(p)}</span></label>`).join("")}</div></fieldset>
     ${canAssign() ? "" : `<p class="hint">You can assign tasks to yourself or to a super admin.</p>`}
     <div class="row-btns"><button class="btn" type="submit">${t.id ? "Save task" : "Create task"}</button><button class="btn ghost" type="button" data-close-modal>Cancel</button></div>
   </form>`;
@@ -277,6 +346,101 @@ function closeModal(){ if (typeof dockPick !== "undefined" && !document.querySel
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
 document.addEventListener("click", e => { if (e.target.closest("[data-close-modal]") || e.target.id === "ws-modal") closeModal(); });
 
+/* Review flow, checklist, files and links (shown under the task, updates live) */
+function reviewHTML(t){
+  const creator = isCreator(t), assignee = t.assignee === uid(), st = t.status || "todo";
+  let review = "";
+  if (st === "review" && creator && !assignee) review = `<div class="notice review-bar"><strong>${esc(pname(t.assignee))} sent this for review.</strong>
+      <div class="row-btns" style="margin-top:8px"><button class="btn sm" type="button" data-approve="${esc(t.id)}">Approve</button><button class="btn ghost sm" type="button" data-changes="${esc(t.id)}">Request changes</button></div>
+      <form class="changes-form" data-changes-form="${esc(t.id)}" hidden><textarea name="note" maxlength="1500" placeholder="What needs to change?" required></textarea><button class="btn sm" type="submit">Send back</button></form></div>`;
+  else if (st === "review" && assignee && !creator) review = `<p class="hint">⏳ Waiting for ${esc(pname(t.reporter))} to review.</p>`;
+  else if (assignee && !creator && ["idea", "todo", "doing"].includes(st)) review = `<div class="review-bar"><button class="btn sm" type="button" data-submit-review="${esc(t.id)}">Submit for review</button> <span class="hint">when it's ready for ${esc(pname(t.reporter))} to check.</span></div>`;
+  return review;
+}
+function taskExtras(t){
+  const creator = isCreator(t), mover = canMove(t);
+  const cl = t.checklist || [], files = t.files || [], links = t.links || [];
+  return `
+    <h3 class="group-title">Checklist ${cl.length ? `<span class="hint">${cl.filter(c => c.done).length}/${cl.length}</span>` : ""}</h3>
+    <div class="checklist">${cl.map(c => `<label class="ck${c.done ? " done" : ""}"><input type="checkbox" data-ck="${esc(t.id)}" data-ck-id="${esc(c.id)}" ${c.done ? "checked" : ""} ${mover ? "" : "disabled"}><span>${esc(c.t)}</span>${creator ? `<button class="x-del" type="button" data-ck-del="${esc(t.id)}" data-ck-id="${esc(c.id)}" aria-label="Remove">✕</button>` : ""}</label>`).join("") || `<p class="hint" style="margin:0">${creator ? "Break it into steps, e.g. Script, Film, Edit, Caption, Post." : "No checklist."}</p>`}</div>
+    ${creator ? `<form class="ck-add" data-ck-add="${esc(t.id)}"><input type="text" name="item" maxlength="140" placeholder="Add a step…"><button class="btn ghost sm" type="submit">Add</button></form>` : ""}
+    <h3 class="group-title">Files &amp; links</h3>
+    <div class="att-list">${files.map((f, i) => `<div class="att">📄 <a href="${esc(f.url)}" target="_blank" rel="noopener">${esc(f.name)}</a><span class="hint">${esc(fmtSize(f.size || 0))} · ${esc(pname(f.by))}</span>${creator || f.by === uid() ? `<button class="x-del" type="button" data-att-del="${esc(t.id)}" data-kind="files" data-i="${i}" aria-label="Remove">✕</button>` : ""}</div>`).join("")}
+      ${links.map((l, i) => `<div class="att">🔗 <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label || l.url)}</a><span class="hint">${esc(pname(l.by))}</span>${creator || l.by === uid() ? `<button class="x-del" type="button" data-att-del="${esc(t.id)}" data-kind="links" data-i="${i}" aria-label="Remove">✕</button>` : ""}</div>`).join("")}
+      ${files.length + links.length ? "" : `<p class="hint" style="margin:0">Nothing attached yet.</p>`}</div>
+    ${mover ? `<div class="row-btns"><label class="btn ghost sm" style="cursor:pointer">Attach file<input type="file" multiple hidden data-att-file="${esc(t.id)}"></label><button class="btn ghost sm" type="button" data-link-open>Add link</button></div>
+      <form class="link-add" data-link-add="${esc(t.id)}" hidden><input type="text" inputmode="url" name="url" placeholder="Paste a link (Canva, Drive, YouTube…)" required><input type="text" name="label" maxlength="80" placeholder="Label (optional)"><button class="btn sm" type="submit">Add</button></form>
+      <div class="progress" id="att-progress" hidden><i></i></div>` : ""}
+    <p class="hint" id="extras-msg" role="status" aria-live="polite"></p>`;
+}
+function drawExtras(){
+  const b = $("task-extras"); if (!b) return; const t = TASKS.find(x => x.id === b.dataset.taskExtras); if (!t) return;
+  if (!b.contains(document.activeElement)) b.innerHTML = taskExtras(t);
+  const r = $("task-review"); if (r && !r.contains(document.activeElement)) r.innerHTML = reviewHTML(t);
+}
+const exMsg = (t, err) => { const m = $("extras-msg"); if (m) { m.textContent = t; m.className = err ? "hint err" : "hint okc"; } };
+async function taskUpdate(id, fields, okText){
+  try { await db.collection("tasks").doc(id).update({...fields, updatedAt: TS()}); if (okText) msg(okText); return true; }
+  catch { exMsg("That didn't save. Make sure the latest database rules are published.", true); return false; }
+}
+document.addEventListener("click", async e => {
+  const g = s => e.target.closest(s); let b;
+  const host = g("#task-extras") || g("#task-review"); if (!host) return;
+  const tid = host.dataset.taskExtras, t = TASKS.find(x => x.id === tid); if (!t) return;
+  if ((b = g("[data-submit-review]"))) { if (await taskUpdate(tid, {status: "review"}, "Sent for review.")) notify(t.reporter, `${myLabel()} sent "${t.title}" for your review`, {tab: "ws_tasks", id: tid}); return; }
+  if ((b = g("[data-approve]"))) { const next = t.postDate ? "scheduled" : "done";
+    if (await taskUpdate(tid, {status: next}, "Approved.")) notify(t.assignee, `${myLabel()} approved "${t.title}"${next === "scheduled" ? " — it's scheduled" : ""} ✅`, {tab: "ws_tasks", id: tid}); return; }
+  if ((b = g("[data-changes]"))) { const f = document.querySelector("[data-changes-form]"); f.hidden = !f.hidden; if (!f.hidden) f.note.focus(); return; }
+  if ((b = g("[data-ck-del]"))) { await taskUpdate(tid, {checklist: (t.checklist || []).filter(c => c.id !== b.dataset.ckId)}); return; }
+  if ((b = g("[data-link-open]"))) { const f = document.querySelector("[data-link-add]"); f.hidden = !f.hidden; if (!f.hidden) f.url.focus(); return; }
+  if ((b = g("[data-att-del]"))) { const kind = b.dataset.kind, list = [...(t[kind] || [])], gone = list.splice(+b.dataset.i, 1)[0];
+    if (await taskUpdate(tid, {[kind]: list}) && gone && gone.path) storage.ref(gone.path).delete().catch(() => {}); return; }
+});
+document.addEventListener("change", async e => {
+  const ck = e.target.closest("[data-ck]");
+  if (ck) { const t = TASKS.find(x => x.id === ck.dataset.ck); if (!t) return;
+    const list = (t.checklist || []).map(c => c.id === ck.dataset.ckId ? {...c, done: ck.checked} : c);
+    ck.blur(); await taskUpdate(t.id, {checklist: list}); return; }
+  const fi = e.target.closest("[data-att-file]");
+  if (fi && fi.files.length) {
+    const t = TASKS.find(x => x.id === fi.dataset.attFile); if (!t) return;
+    const bar = $("att-progress"); if (bar) bar.hidden = false; const added = [];
+    for (const file of fi.files) {
+      if (file.size > 200 * 1024 * 1024) { exMsg(`${file.name} is over 200 MB and was skipped.`, true); continue; }
+      const path = `workspace/tasks/${t.id}/${Date.now()}-${file.name.replace(/[^\w.\- ]+/g, "_").slice(0, 100)}`, ref = storage.ref(path);
+      try {
+        const up = ref.put(file, {contentType: file.type || "application/octet-stream"});
+        up.on("state_changed", s => { const p = Math.round(s.bytesTransferred / s.totalBytes * 100); if (bar) bar.firstElementChild.style.width = p + "%"; exMsg(`Uploading ${file.name}… ${p}%`); });
+        await up; added.push({name: file.name.slice(0, 200), url: await ref.getDownloadURL(), path, size: file.size, by: uid()});
+      } catch { exMsg(`${file.name} didn't upload. Make sure the latest Storage rules are published.`, true); }
+    }
+    if (bar) bar.hidden = true;
+    if (added.length) {
+      const cur = TASKS.find(x => x.id === t.id) || t;
+      if (await taskUpdate(t.id, {files: [...(cur.files || []), ...added].slice(-30)})) {
+        exMsg(`Attached ${added.map(a => a.name).join(", ")}.`);
+        const other = uid() === t.reporter ? t.assignee : t.reporter; notify(other, `${myLabel()} attached ${added.length === 1 ? added[0].name : added.length + " files"} to "${t.title}"`, {tab: "ws_tasks", id: t.id});
+      }
+    }
+    fi.value = "";
+  }
+});
+document.addEventListener("submit", async e => {
+  const f = e.target;
+  if (f.matches("[data-ck-add]")) { e.preventDefault(); const t = TASKS.find(x => x.id === f.dataset.ckAdd), v = f.item.value.trim().slice(0, 140); if (!t || !v) return;
+    f.item.value = ""; await taskUpdate(t.id, {checklist: [...(t.checklist || []), {id: Math.random().toString(36).slice(2, 9), t: v, done: false}].slice(0, 40)}); f.item && f.item.focus(); }
+  if (f.matches("[data-link-add]")) { e.preventDefault(); const t = TASKS.find(x => x.id === f.dataset.linkAdd); let url = f.url.value.trim(); if (!t || !url) return;
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+    if (await taskUpdate(t.id, {links: [...(t.links || []), {url: url.slice(0, 500), label: f.label.value.trim().slice(0, 80), by: uid()}].slice(-30)})) {
+      const other = uid() === t.reporter ? t.assignee : t.reporter; notify(other, `${myLabel()} added a link to "${t.title}"`, {tab: "ws_tasks", id: t.id}); } }
+  if (f.matches("[data-changes-form]")) { e.preventDefault(); const t = TASKS.find(x => x.id === f.dataset.changesForm), note = f.note.value.trim().slice(0, 1500); if (!t || !note) return;
+    try {
+      await db.collection("tasks").doc(t.id).collection("comments").add({from: uid(), text: "Changes requested: " + note, at: TS()});
+      await db.collection("tasks").doc(t.id).update({status: "doing", comments: (t.comments || 0) + 1, updatedAt: TS()});
+      notify(t.assignee, `${myLabel()} asked for changes on "${t.title}": ${note.slice(0, 120)}`, {tab: "ws_tasks", id: t.id}); msg("Sent back with your notes.");
+    } catch { exMsg("That didn't save. Make sure the latest database rules are published.", true); } }
+});
+
 function openTask(id){
   const t = TASKS.find(x => x.id === id); if (!t) return;
   if (window.__setHash) window.__setHash(id);
@@ -285,14 +449,17 @@ function openTask(id){
   const readOnly = `<h3 class="group-title" style="margin-top:6px">${esc(t.title)}</h3>
     <dl class="task-facts"><div><dt>Assigned to</dt><dd><span class="who-cell">${avatar(t.assignee, 22)} ${esc(pname(t.assignee))}</span></dd></div>
       <div><dt>Status</dt><dd>${mayMove ? `<select data-task-status="${esc(t.id)}" aria-label="Move this task">${STATUSES.map(([k, l]) => `<option value="${k}" ${(t.status || "todo") === k ? "selected" : ""}>${l}</option>`).join("")}</select>` : esc((STATUSES.find(x => x[0] === (t.status || "todo")) || STATUSES[0])[1])}</dd></div>
-      <div><dt>Priority</dt><dd>${esc(pr)}</dd></div><div><dt>Due</dt><dd>${t.due ? esc(fmtDay(t.due)) : "No date"}</dd></div></dl>
+      <div><dt>Priority</dt><dd>${esc(pr)}</dd></div><div><dt>Due</dt><dd>${t.due ? esc(fmtDay(t.due)) : "No date"}</dd></div>
+      ${t.postDate ? `<div><dt>Post date</dt><dd>${esc(fmtDay(t.postDate))}</dd></div>` : ""}${(t.platforms || []).length ? `<div><dt>Platforms</dt><dd>${esc(t.platforms.join(", "))}</dd></div>` : ""}</dl>
     ${t.desc ? `<p style="white-space:pre-wrap">${esc(t.desc)}</p>` : ""}
     <p class="hint">${mayMove ? `Only ${esc(pname(t.reporter))} (who created this) can edit or reassign it. You can move it along and comment.` : `Only ${esc(pname(t.reporter))} (who created this) can edit it. You can comment below.`}</p>`;
   const gcal = t.due ? gcalLink({title: "Due: " + t.title, date: t.due, allDay: true, desc: t.desc}) : "";
   modal(`<p class="hint" style="margin:0">${esc(t.type || "Task")} · created by ${esc(pname(t.reporter))} ${esc(when(t.createdAt))}</p>
+    <div id="task-review" data-task-extras="${esc(t.id)}">${reviewHTML(t)}</div>
     ${mayEdit ? taskForm(t) : readOnly}
     <div class="row-btns">${gcal ? `<a class="btn ghost sm" href="${esc(gcal)}" target="_blank" rel="noopener">Add due date to Google Calendar</a>` : ""}
       ${isSuper() || t.reporter === uid() ? `<button class="btn danger sm" type="button" data-del-task="${esc(t.id)}">Delete task</button>` : ""}</div>
+    <div id="task-extras" data-task-extras="${esc(t.id)}">${taskExtras(t)}</div>
     <h3 class="group-title">Comments</h3><div class="comments" id="task-comments"><p class="hint">Loading…</p></div>
     <form class="comment-form" data-comment-form="${esc(t.id)}"><textarea name="text" maxlength="2000" placeholder="Write a comment…" required></textarea><button class="btn sm" type="submit">Comment</button></form>`, true);
   const m = $("ws-modal");
@@ -303,8 +470,9 @@ function openTask(id){
   viewSubs.push(m._unsub);
 }
 async function saveTask(form){
-  const id = form.dataset.taskForm, f = Object.fromEntries(new FormData(form));
-  const data = {title: f.title.trim().slice(0, 200), desc: (f.desc || "").slice(0, 4000), assignee: f.assignee, status: f.status, type: f.type, priority: f.priority, due: f.due || "", updatedAt: TS()};
+  const id = form.dataset.taskForm, fd = new FormData(form), f = Object.fromEntries(fd);
+  const data = {title: f.title.trim().slice(0, 200), desc: (f.desc || "").slice(0, 4000), assignee: f.assignee, status: f.status, type: f.type, priority: f.priority, due: f.due || "",
+    postDate: f.postDate || "", platforms: fd.getAll("platforms").slice(0, 12), updatedAt: TS()};
   if (!data.title) return;
   try {
     if (id) {
@@ -316,7 +484,8 @@ async function saveTask(form){
       const ref = await db.collection("tasks").add({...data, reporter: uid(), comments: 0, createdAt: TS()});
       notify(data.assignee, `${myLabel()} assigned you "${data.title}"`, {tab: "ws_tasks", id: ref.id});
     }
-    closeModal(); msg(id ? "Task saved." : "Task created.");
+    if (id) { msg("Task saved."); const b = form.querySelector("[type=submit]"); if (b) { b.textContent = "Saved ✓"; setTimeout(() => { b.textContent = "Save task"; }, 1500); } }
+    else { closeModal(); msg("Task created."); }
   } catch { msg("That task didn't save. Check your access, or that the latest database rules are published.", true); }
 }
 async function moveTask(id, status){
@@ -431,44 +600,56 @@ async function saveGroup(editId){
 }
 
 /* ===== CALENDAR ===== */
+const utcStamp = ms => new Date(ms).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
 function gcalLink(ev){
-  const fmt = (d, t) => d.replace(/-/g, "") + (t ? "T" + t.replace(":", "") + "00" : "");
   let dates;
-  if (ev.allDay || !ev.start) { const n = new Date(ev.date + "T12:00:00"); n.setDate(n.getDate() + 1); dates = fmt(ev.date) + "/" + fmt(dayStr(n)); }
-  else dates = fmt(ev.date, ev.start) + "/" + fmt(ev.date, ev.end || ev.start);
-  return "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(ev.title) + "&dates=" + dates + "&details=" + encodeURIComponent((ev.desc || "") + "\n\nFrom the A·A·O Workspace") + "&ctz=America/New_York";
+  if (!timed(ev)) { const n = new Date(ev.date + "T12:00:00"); n.setDate(n.getDate() + 1); dates = ev.date.replace(/-/g, "") + "/" + dayStr(n).replace(/-/g, ""); }
+  else dates = utcStamp(evStartMs(ev)) + "/" + utcStamp(evEndMs(ev));
+  return "https://calendar.google.com/calendar/render?action=TEMPLATE&text=" + encodeURIComponent(ev.title) + "&dates=" + dates + "&details=" + encodeURIComponent((ev.desc || "") + "\n\nFrom the A·A·O Workspace");
 }
 function icsFile(ev){
-  const st = ev.allDay || !ev.start ? `DTSTART;VALUE=DATE:${ev.date.replace(/-/g, "")}` : `DTSTART;TZID=America/New_York:${ev.date.replace(/-/g, "")}T${ev.start.replace(":", "")}00`;
-  const en = ev.allDay || !ev.start ? "" : `DTEND;TZID=America/New_York:${ev.date.replace(/-/g, "")}T${(ev.end || ev.start).replace(":", "")}00`;
+  const st = !timed(ev) ? `DTSTART;VALUE=DATE:${ev.date.replace(/-/g, "")}` : `DTSTART:${utcStamp(evStartMs(ev))}`;
+  const en = !timed(ev) ? "" : `DTEND:${utcStamp(evEndMs(ev))}`;
   const txt = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//AAO Workspace//EN", "BEGIN:VEVENT", `UID:${ev.id}@aao`, st, en, `SUMMARY:${(ev.title || "").replace(/[,;]/g, "\\$&")}`, `DESCRIPTION:${(ev.desc || "").replace(/\n/g, "\\n").replace(/[,;]/g, "\\$&")}`, "BEGIN:VALARM", "TRIGGER:-PT30M", "ACTION:DISPLAY", "DESCRIPTION:Reminder", "END:VALARM", "END:VEVENT", "END:VCALENDAR"].filter(Boolean).join("\r\n");
   return URL.createObjectURL(new Blob([txt], {type: "text/calendar"}));
 }
+let calShow = "all";
 function drawCalendar(open){
   const y = calMonth.getFullYear(), m = calMonth.getMonth(), first = new Date(y, m, 1), startDay = first.getDay(), days = new Date(y, m + 1, 0).getDate(), todayS = dayStr(new Date());
   const cells = []; for (let i = 0; i < startDay; i++) cells.push(null); for (let d = 1; d <= days; d++) cells.push(new Date(y, m, d)); while (cells.length % 7) cells.push(null);
-  const evOn = s => EVENTS.filter(e => e.date === s), dueOn = s => TASKS.filter(t => t.due === s && t.status !== "done");
-  const upcoming = [...EVENTS.filter(e => e.date >= todayS).map(e => ({...e, kind: "event"})), ...TASKS.filter(t => t.due && t.due >= todayS && t.status !== "done").map(t => ({id: t.id, title: t.title, date: t.due, kind: "task"}))]
-    .sort((a, b) => (a.date + (a.start || "")).localeCompare(b.date + (b.start || ""))).slice(0, 12);
-  content.innerHTML = `<div class="ws-bar"><button class="btn ghost sm" type="button" data-cal="-1" aria-label="Previous month">←</button><strong class="cal-title">${calMonth.toLocaleDateString("en-US", {month: "long", year: "numeric"})}</strong><button class="btn ghost sm" type="button" data-cal="1" aria-label="Next month">→</button><button class="btn ghost sm" type="button" data-cal="0">Today</button><button class="btn" type="button" data-new-event="${todayS}" style="margin-left:auto">+ New event</button><span class="hint" id="ws-note"></span></div>
+  const showEv = calShow !== "content", showDue = calShow === "all", showPost = calShow !== "events";
+  const evOn = s => !showEv ? [] : EVENTS.filter(e => evDay(e) === s).sort((a, b) => evSortKey(a).localeCompare(evSortKey(b))), dueOn = s => !showDue ? [] : TASKS.filter(t => t.due === s && t.status !== "done");
+  const postOn = s => !showPost ? [] : TASKS.filter(t => t.postDate === s);
+  const upcoming = [...EVENTS.filter(e => evDay(e) >= todayS).map(e => ({id: e.id, title: e.title, day: evDay(e), time: evTime(e), key: evSortKey(e), kind: "event"})),
+      ...TASKS.filter(t => t.due && t.due >= todayS && t.status !== "done").map(t => ({id: t.id, title: t.title, day: t.due, time: "", key: t.due + "T23", kind: "task"})),
+      ...TASKS.filter(t => t.postDate && t.postDate >= todayS && t.status !== "done").map(t => ({id: t.id, title: t.title, day: t.postDate, time: "", key: t.postDate + "T22", kind: "post", plat: (t.platforms || []).map(platShort).join("·")}))]
+    .filter(x => (x.kind === "event" && showEv) || (x.kind === "task" && showDue) || (x.kind === "post" && showPost))
+    .sort((a, b) => a.key.localeCompare(b.key)).slice(0, 12);
+  content.innerHTML = `<div class="ws-bar"><button class="btn ghost sm" type="button" data-cal="-1" aria-label="Previous month">←</button><strong class="cal-title">${calMonth.toLocaleDateString("en-US", {month: "long", year: "numeric"})}</strong><button class="btn ghost sm" type="button" data-cal="1" aria-label="Next month">→</button><button class="btn ghost sm" type="button" data-cal="0">Today</button><select data-cal-show aria-label="Show on calendar" style="margin-left:auto"><option value="all" ${calShow === "all" ? "selected" : ""}>Everything</option><option value="content" ${calShow === "content" ? "selected" : ""}>Content calendar</option><option value="events" ${calShow === "events" ? "selected" : ""}>Meetings &amp; events</option></select><button class="btn" type="button" data-new-event="${todayS}">+ New event</button><span class="hint" id="ws-note"></span></div>
     <div class="cal"><div class="cal-dow">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => `<span>${d}</span>`).join("")}</div>
     <div class="cal-grid">${cells.map(d => { if (!d) return `<div class="cell empty"></div>`; const s = dayStr(d);
       return `<div class="cell${s === todayS ? " today" : ""}" data-new-event="${s}"><span class="dn">${d.getDate()}</span>
-        ${evOn(s).map(e => `<button class="ev" type="button" data-event="${esc(e.id)}">${e.start && !e.allDay ? esc(e.start) + " " : ""}${esc(e.title)}</button>`).join("")}
+        ${evOn(s).map(e => `<button class="ev" type="button" data-event="${esc(e.id)}">${timed(e) ? esc(evTime(e)) + " " : ""}${esc(e.title)}</button>`).join("")}
+        ${postOn(s).map(t => `<button class="ev post${t.status === "done" ? " posted" : ""}" type="button" data-open-task="${esc(t.id)}" title="${esc((t.platforms || []).join(", "))}">📣 ${(t.platforms || []).length ? esc(t.platforms.map(platShort).join("·")) + " " : ""}${esc(t.title)}</button>`).join("")}
         ${dueOn(s).map(t => `<button class="ev due" type="button" data-open-task="${esc(t.id)}">Due: ${esc(t.title)}</button>`).join("")}</div>`; }).join("")}</div></div>
+    <p class="hint cal-key"><span class="k k-ev"></span> Events <span class="k k-post"></span> Content going out <span class="k k-due"></span> Task due</p>
     <h3 class="group-title">Coming up</h3>
-    <div class="agenda">${upcoming.map(x => `<button class="ag" type="button" ${x.kind === "event" ? `data-event="${esc(x.id)}"` : `data-open-task="${esc(x.id)}"`}><span class="ag-d">${esc(fmtDay(x.date))}</span><span>${x.kind === "task" ? "Due: " : ""}${esc(x.title)}${x.start && !x.allDay ? ` <span class="hint">${esc(x.start)}</span>` : ""}</span></button>`).join("") || `<p class="hint">Nothing scheduled.</p>`}</div>`;
+    <div class="agenda">${upcoming.map(x => `<button class="ag" type="button" ${x.kind === "event" ? `data-event="${esc(x.id)}"` : `data-open-task="${esc(x.id)}"`}><span class="ag-d">${esc(fmtDay(x.day))}</span><span>${x.kind === "task" ? "Due: " : x.kind === "post" ? `📣 ${x.plat ? esc(x.plat) + " " : ""}` : ""}${esc(x.title)}${x.time ? ` <span class="hint">${esc(x.time)}</span>` : ""}</span></button>`).join("") || `<p class="hint">Nothing scheduled.</p>`}</div>
+    <p class="hint">Times are shown in your time zone (${esc(tzCity(MY_TZ))}).</p>`;
   if (open && open.event) { if (EVENTS.find(e => e.id === open.event)) openEvent(open.event); else pendingEvent = open.event; }
 }
 function eventForm(ev = {}){
+  const sMs = evStartMs(ev), eMs = evEndMs(ev);
+  const vDate = sMs ? dayStr(new Date(sMs)) : (ev.date || dayStr(new Date())), vStart = sMs ? hm24(sMs) : (ev.start || "10:00"), vEnd = eMs ? hm24(eMs) : (ev.end || "11:00");
   return `<form class="ws-form" data-event-form="${esc(ev.id || "")}">
     <label class="f"><span>Title</span><input type="text" name="title" maxlength="160" required value="${esc(ev.title || "")}" placeholder="e.g. Content planning call"></label>
     <div class="grid2">
-      <label class="f"><span>Date</span><input type="date" name="date" required value="${esc(ev.date || dayStr(new Date()))}"></label>
+      <label class="f"><span>Date</span><input type="date" name="date" required value="${esc(vDate)}"></label>
       <label class="f check" style="align-self:end"><input type="checkbox" name="allDay" ${ev.allDay ? "checked" : ""}><span>All day</span></label>
-      <label class="f"><span>Start</span><input type="time" name="start" value="${esc(ev.start || "10:00")}"></label>
-      <label class="f"><span>End</span><input type="time" name="end" value="${esc(ev.end || "11:00")}"></label>
+      <label class="f"><span>Start</span><input type="time" name="start" value="${esc(vStart)}"></label>
+      <label class="f"><span>End</span><input type="time" name="end" value="${esc(vEnd)}"></label>
     </div>
+    <p class="hint" style="margin:0">Times are in your time zone (${esc(tzCity(MY_TZ))}). Teammates elsewhere see it in theirs.</p>
     <label class="f"><span>Details</span><textarea name="desc" maxlength="2000" placeholder="Agenda, meeting link…">${esc(ev.desc || "")}</textarea></label>
     <fieldset class="perm-box"><legend>Who's invited</legend><div class="invite-list">${members().map(id => `<label class="inv"><input type="checkbox" name="att" value="${esc(id)}" ${(ev.attendees || [uid()]).includes(id) ? "checked" : ""}>${avatar(id, 28)}<span class="inv-t"><strong>${esc(pname(id))}</strong>${person(id).name && person(id).email ? `<span class="hint">${esc(person(id).email)}</span>` : ""}</span></label>`).join("")}</div></fieldset>
     <div class="row-btns"><button class="btn" type="submit">${ev.id ? "Save event" : "Create event"}</button><button class="btn ghost" type="button" data-close-modal>Cancel</button></div></form>`;
@@ -478,7 +659,8 @@ function openEvent(id, justCreated){
   if (window.__setHash) window.__setHash(id);
   const mine = isSuper() || ev.createdBy === uid();
   modal(`${justCreated ? `<div class="notice"><strong>Event created.</strong> <span class="hint">Click "Add to Google Calendar" below so it shows on your phone.</span></div>` : ""}<p class="hint" style="margin:0">Created by ${esc(pname(ev.createdBy))}</p>
-    ${mine ? eventForm(ev) : `<h3 class="group-title">${esc(ev.title)}</h3><p>${esc(fmtDay(ev.date))} ${ev.allDay ? "· all day" : `· ${esc(ev.start || "")}–${esc(ev.end || "")}`}</p><p>${esc(ev.desc || "")}</p>`}
+    ${mine ? eventForm(ev) : `<h3 class="group-title">${esc(ev.title)}</h3><p>${esc(fmtDay(evDay(ev)))} ${!timed(ev) ? "· all day" : `· ${esc(hm(evStartMs(ev)))}–${esc(hm(evEndMs(ev)))} <span class="hint">your time (${esc(tzCity(MY_TZ))})</span>`}</p>
+      ${timed(ev) && ev.tz && ev.tz !== MY_TZ ? `<p class="hint" style="margin-top:-8px">That's ${esc(new Date(evStartMs(ev)).toLocaleTimeString("en-US", {timeZone: ev.tz, hour: "numeric", minute: "2-digit"}))} in ${esc(tzCity(ev.tz))}.</p>` : ""}<p>${esc(ev.desc || "")}</p>`}
     <div class="row-btns"><a class="btn sm" href="${esc(gcalLink(ev))}" target="_blank" rel="noopener">Add to Google Calendar</a><a class="btn ghost sm" href="${icsFile(ev)}" download="${esc((ev.title || "event").replace(/[^\w ]+/g, "")).slice(0, 40)}.ics">Download .ics</a>
       ${mine ? `<button class="btn danger sm" type="button" data-del-event="${esc(ev.id)}">Delete</button>` : ""}</div>
     <p class="hint">Adding it to Google Calendar lets your phone remind you before it starts.</p>`, true);
@@ -487,11 +669,16 @@ async function saveEvent(form){
   const id = form.dataset.eventForm, fd = new FormData(form);
   const data = {title: String(fd.get("title")).trim().slice(0, 160), date: fd.get("date"), allDay: !!fd.get("allDay"), start: fd.get("start") || "", end: fd.get("end") || "", desc: String(fd.get("desc") || "").slice(0, 2000), attendees: [...new Set([uid(), ...fd.getAll("att")])], updatedAt: TS()};
   if (!data.title || !data.date) return;
+  data.tz = MY_TZ;
+  if (!data.allDay && data.start) {
+    const sMs = zonedToUtc(data.date, data.start, MY_TZ); let eMs = zonedToUtc(data.date, data.end || data.start, MY_TZ); if (eMs < sMs) eMs += 864e5;
+    data.startAt = new Date(sMs).toISOString(); data.endAt = new Date(eMs).toISOString();
+  } else { data.startAt = ""; data.endAt = ""; }
   try {
     let evId = id;
     if (id) await db.collection("events").doc(id).update(data);
     else evId = (await db.collection("events").add({...data, createdBy: uid(), createdAt: TS()})).id;
-    data.attendees.forEach(p => notify(p, `${myLabel()} ${id ? "updated" : "invited you to"} "${data.title}" on ${fmtDay(data.date)}`, {tab: "ws_calendar", event: evId}));
+    data.attendees.forEach(p => notify(p, `${myLabel()} ${id ? "updated" : "invited you to"} "${data.title}" on ${fmtDay(data.date)}${data.startAt ? " at " + new Date(data.startAt).toLocaleTimeString("en-US", {timeZone: MY_TZ, hour: "numeric", minute: "2-digit", timeZoneName: "short"}) : ""}`, {tab: "ws_calendar", event: evId}));
     closeModal();
     if (id) msg("Event saved.");
     else { msg("Event created. Add it to your Google Calendar so your phone reminds you."); if (EVENTS.find(e => e.id === evId)) openEvent(evId, true); else { pendingEvent = evId; pendingEventNew = true; } }
@@ -616,6 +803,7 @@ function drawTeam(){
     return `<article class="tm">${avatar(id, 72)}<strong>${esc(p.name || p.email)}${id === uid() ? ` <span class="chip muted">You</span>` : ""}</strong>
       <span class="tm-cat">${esc(p.title || "No category yet")}</span>
       <span class="hint">${esc(stateLabel(id))}${p.statusText && stateOf(id) !== "offline" ? " · " + esc(p.statusText) : ""}</span><span class="hint">${esc(A.ROLE_LABEL[p.role] || "")}</span>
+      ${p.tz ? `<span class="hint">🕒 ${esc(new Date().toLocaleTimeString("en-US", {timeZone: p.tz, hour: "numeric", minute: "2-digit"}))} in ${esc(tzCity(p.tz))}</span>` : ""}
       ${id === uid() ? "" : `<div class="row-btns">${canWS("ws_chat") ? `<button class="btn ghost sm" type="button" data-dm="${esc(id)}">Message</button>` : ""}${canWS("ws_tasks") && assignable().includes(id) ? `<button class="btn ghost sm" type="button" data-task-for="${esc(id)}">Give a task</button>` : ""}</div>`}</article>`; }).join("")}</div>
     <p class="hint">${isSuper() ? "Set categories, photos and access under Users & access." : "Ask a super admin to update your category. Add your photo under My account."}</p>`;
 }
@@ -670,6 +858,7 @@ document.addEventListener("submit", async e => {
   }
 });
 content.addEventListener("change", e => {
+  if (e.target.matches("[data-cal-show]")) { calShow = e.target.value; drawCalendar(); return; }
   if (e.target.matches("[data-task-filter]")) { taskFilter = e.target.value; drawTasks(); }
   if (e.target.matches("[data-doc-upload]") && e.target.files.length) uploadDocs([...e.target.files]);
 });

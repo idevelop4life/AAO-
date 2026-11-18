@@ -29,6 +29,19 @@ service firebase.storage {
             || (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'
                 && 'ws_docs' in firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('perms', [])));
     }
+    // Files attached to tasks: anyone with Tasks access.
+    function wsTasks() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'super_admin'
+            || (firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin'
+                && 'ws_tasks' in firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('perms', [])));
+    }
+    match /workspace/tasks/{allPaths=**} {
+      allow read: if wsTasks();
+      allow create: if wsTasks() && request.resource.size < 200 * 1024 * 1024;
+      allow delete: if wsTasks();
+    }
     match /workspace/{allPaths=**} {
       allow read: if wsDocs();
       allow create: if wsDocs() && request.resource.size < 50 * 1024 * 1024;
