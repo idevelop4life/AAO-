@@ -165,6 +165,7 @@ async function boot(user){
   const when = snap && snap.exists ? snap.data().updatedAt : null;
   setStatus(when ? `Last published ${fmtWhen(when)}.` : "All changes saved.");
   if (role === "super_admin") { refreshPendingCount(); watchApprovals(); }
+  if (window.TOUR) TOUR.maybeStart();
 }
 /* Doorway for workspace.js */
 window.__ADMIN = {
@@ -820,6 +821,7 @@ function drawAccount(){
         <p class="hint" style="margin:2px 0 0">${esc(me.email)}</p>
       </div>
     </section>
+    <p style="margin:0 0 10px"><button class="btn ghost sm" type="button" data-start-tour>🧭 Take the tour</button></p>
     <p class="hint" style="max-width:640px">This is your home in the admin. It shows what's waiting for you and what you have access to. Use the menu to get to your work.</p>
     <div id="me-notice"></div>
     <div id="me-approvals"></div>

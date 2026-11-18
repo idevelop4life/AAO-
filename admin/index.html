@@ -68,6 +68,10 @@ input:focus,textarea:focus,select:focus{border-color:var(--gold);outline:none}
 
 /* app shell */
 .shell{display:grid;grid-template-columns:230px 1fr;min-height:100%}
+.shell > *{min-width:0}
+#content,.item,.f,.group{min-width:0}
+.item-head{min-width:0}.item-head strong{min-width:0}
+#content input,#content textarea,#content select{max-width:100%}
 .side{border-right:1px solid var(--line);background:var(--panel);padding:20px 14px;display:flex;flex-direction:column;gap:18px;position:sticky;top:0;height:100vh;overflow-y:auto}
 .side .mark{padding:0 8px}
 .side nav{display:grid;gap:2px}
@@ -299,6 +303,24 @@ input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
   .cd-wins{position:fixed;left:10px;right:10px;bottom:80px}
   .cd-win{width:100%;height:min(460px,65vh)}
 }
+/* guided tour */
+.tour-btn{width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:none;color:var(--gold);font:700 16px/1 var(--body);cursor:pointer;flex:none}
+.tour-btn:hover{border-color:var(--gold)}
+#tour{position:fixed;inset:0;z-index:200;pointer-events:none}
+#tour > *{pointer-events:auto}
+#tour .tour-spot{pointer-events:none;z-index:1}
+#tour .tour-card{z-index:2}
+.tour-dim{position:fixed;inset:0;background:rgba(0,0,0,.6)}
+.tour-dim[hidden],.tour-spot[hidden]{display:none}
+.tour-spot{position:fixed;border:3px solid #e9c66b;border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.6),0 0 24px rgba(233,198,107,.5);transition:all .25s ease;pointer-events:none}
+.tour-card{position:fixed;width:360px;max-width:calc(100vw - 24px);background:var(--panel);border:1px solid var(--gold);box-shadow:0 18px 50px rgba(0,0,0,.6);padding:18px 18px 14px;display:grid;gap:8px;transition:top .25s ease,left .25s ease}
+.tour-card.center{left:50% !important;top:50% !important;transform:translate(-50%,-50%)}
+.tour-card h3{margin:0;font-family:var(--display);font-size:22px;color:var(--text)}
+.tour-card .tour-text{margin:0;line-height:1.55}
+.tour-step{margin:0;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--gold)}
+.tour-btns{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.tour-btns [hidden]{display:none}
+body.touring{overflow:hidden}
 .invite-list{display:grid;gap:6px;max-height:240px;overflow:auto}
 .inv{display:flex;gap:10px;align-items:center;padding:6px 8px;border:1px solid var(--line);cursor:pointer;min-width:0}
 .inv input{flex:none}
@@ -426,6 +448,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
     <div class="top"><div style="display:flex;align-items:center;gap:12px"><button class="btn ghost sm menu-btn" type="button" id="menu-btn" aria-label="Open menu">Menu</button><h2 id="tab-title"></h2></div>
       <div class="top-right"><div class="bell-wrap"><button class="bell" type="button" id="bell" aria-label="Notifications" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 16v-5a6 6 0 0 0-12 0v5l-2 2h16l-2-2Z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span id="bell-count" hidden></span></button>
       <div class="notif-panel" id="notif-panel" hidden></div></div>
+      <button class="tour-btn" type="button" id="tour-btn" data-start-tour aria-label="Take the tour" title="Take the tour">?</button>
       <div class="bell-wrap" id="me-bubble-wrap" hidden><button class="me-bubble" type="button" id="me-bubble" aria-label="Your status" aria-haspopup="true"></button>
       <div class="notif-panel me-menu" id="me-menu" hidden></div></div></div></div>
     <div class="content" id="content"></div>
@@ -444,5 +467,6 @@ input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
 <script src="/admin/admin.js"></script>
 <script src="/admin/workspace.js"></script>
+<script src="/admin/tour.js"></script>
 </body>
 </html>
