@@ -348,6 +348,11 @@ input[type=checkbox],input[type=radio]{accent-color:var(--gold-fill)}
 .who-cell{display:inline-flex;gap:6px;align-items:center}
 .team{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
 .tm{background:var(--panel);border:1px solid var(--line);padding:20px;display:grid;justify-items:center;text-align:center;gap:6px}
+.tm{min-width:0;overflow:hidden}
+.tm-name{max-width:100%;min-width:0;display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap}
+.tm-name b{overflow-wrap:anywhere;word-break:break-word}
+.tm-mail{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tm .row-btns{justify-content:center;flex-wrap:wrap}
 .tm-cat{color:var(--gold);font-weight:700;font-size:13px;letter-spacing:.06em}
 </style>
 <script>try { if (localStorage.getItem("admin-theme") === "light") document.documentElement.dataset.theme = "light"; } catch {}</script>

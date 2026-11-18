@@ -800,7 +800,8 @@ async function uploadDocs(files){
 function drawTeam(){
   const ms = members().sort((a, b) => (person(b).role === "super_admin") - (person(a).role === "super_admin") || pname(a).localeCompare(pname(b)));
   content.innerHTML = `<div class="team">${ms.map(id => { const p = person(id);
-    return `<article class="tm">${avatar(id, 72)}<strong>${esc(p.name || p.email)}${id === uid() ? ` <span class="chip muted">You</span>` : ""}</strong>
+    return `<article class="tm">${avatar(id, 72)}<strong class="tm-name"><b>${esc(p.name || String(p.email || "").split("@")[0])}</b>${id === uid() ? `<span class="chip muted">You</span>` : ""}</strong>
+      ${p.email ? `<span class="hint tm-mail" title="${esc(p.email)}">${esc(p.email)}</span>` : ""}
       <span class="tm-cat">${esc(p.title || "No category yet")}</span>
       <span class="hint">${esc(stateLabel(id))}${p.statusText && stateOf(id) !== "offline" ? " · " + esc(p.statusText) : ""}</span><span class="hint">${esc(A.ROLE_LABEL[p.role] || "")}</span>
       ${p.tz ? `<span class="hint">🕒 ${esc(new Date().toLocaleTimeString("en-US", {timeZone: p.tz, hour: "numeric", minute: "2-digit"}))} in ${esc(tzCity(p.tz))}</span>` : ""}
